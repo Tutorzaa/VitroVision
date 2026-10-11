@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>VitroVision — วิเคราะห์ความพร้อมพืชก่อนลงปลูก</title>
+  <meta name="description" content="ถ่ายรูปต้นกล้า แล้วให้ VitroVision ประเมินว่าพืชของคุณพร้อมลงปลูกหรือยัง" />
+  <link rel="stylesheet" href="style.css" />
+  <script type="importmap">
+    { "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js" } }
+  </script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="container header-inner">
+      <a class="brand" href="#top" aria-label="VitroVision กลับขึ้นด้านบน">
+        <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 20A7 7 0 0 1 4 13c0-4 3-8 8-10 5-2 8-2 8-2s0 3-2 8c-2 5-6 8-7 11z"/><path d="M4 21c4-6 8-9 12-11"/></svg>
+        <span>VitroVision</span>
+      </a>
+      <button class="nav-toggle" id="navToggle" aria-expanded="false" aria-controls="mainNav" aria-label="เปิดเมนูนำทาง">
+        <span></span><span></span><span></span>
+      </button>
+      <nav class="main-nav" id="mainNav" aria-label="เมนูหลัก">
+        <a href="#scan">สแกนพืช</a>
+        <a href="#live">Realtime</a>
+        <a href="#how">วิธีใช้งาน</a>
+        <a href="#tips">เคล็ดลับ</a>
+        <a href="#history">ประวัติ</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="top">
+    <!-- HERO -->
+    <section class="hero">
+      <div class="container hero-inner">
+        <div class="hero-text">
+          <p class="eyebrow">VitroVision &bull; Plant Readiness Check</p>
+          <h1>สแกนพืช รู้ทันที<br /><span class="accent">พร้อมลงปลูกหรือยัง</span></h1>
+          <p class="lede">ถ่ายรูปหรืออัปโหลดภาพต้นกล้า ระบบจะประเมินสุขภาพใบ ลำต้น ความชื้น และให้คะแนนความพร้อมก่อนย้ายลงแปลงจริง</p>
+          <div class="hero-actions">
+            <a href="#scan" class="btn btn-primary">เริ่มสแกนเลย</a>
+            <a href="#how" class="btn btn-ghost">ดูวิธีใช้งาน</a>
+          </div>
+          <ul class="hero-stats">
+            <li><strong>~5 วิ</strong><span>รู้ผลวิเคราะห์</span></li>
+            <li><strong>4 มิติ</strong><span>ใบ&bull;ลำต้น&bull;ชื้น&bull;ราก</span></li>
+            <li><strong>ฟรี</strong><span>ใช้งานไม่จำกัด</span></li>
+          </ul>
+        </div>
+        <div class="hero-visual" aria-hidden="true">
+          <div class="phone">
+            <div class="phone-notch"></div>
+            <div class="scan-area">
+              <svg viewBox="0 0 24 24" class="big-leaf" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M11 20A7 7 0 0 1 4 13c0-4 3-8 8-10 5-2 8-2 8-2s0 3-2 8c-2 5-6 8-7 11z"/><path d="M4 21c4-6 8-9 12-11"/></svg>
+              <span class="scan-beam"></span>
+              <span class="corner tl"></span><span class="corner tr"></span>
+              <span class="corner bl"></span><span class="corner br"></span>
+            </div>
+            <p class="phone-caption">กำลังสแกน&hellip; 92%</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SCAN -->
+    <section id="scan" class="section">
+      <div class="container">
+        <h2>สแกนพืชของคุณ</h2>
+        <p class="section-sub">รองรับทั้งถ่ายภาพจากกล้องมือถือและอัปโหลดภาพจากเครื่อง</p>
+
+        <div class="scan-layout">
+          <div class="card scan-card">
+            <h3 class="card-title">1. อัปโหลดภาพต้นกล้า</h3>
+            <label class="upload-zone" for="fileInput" id="uploadZone">
+              <img id="previewImg" class="preview hidden" alt="ภาพตัวอย่างพืชที่อัปโหลด" />
+              <div class="upload-hint" id="uploadHint">
+                <svg viewBox="0 0 24 24" width="40" height="40" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+                <strong>แตะเพื่อถ่ายภาพ / อัปโหลด</strong>
+                <span>ไฟล์ JPG หรือ PNG &bull; บนมือถือจะเปิดกล้องให้เลย</span>
+              </div>
+              <span class="scan-line" aria-hidden="true"></span>
+            </label>
+            <input type="file" id="fileInput" accept="image/*" capture="environment" hidden />
+
+            <div class="field">
+              <label for="plantName">ชื่อพืช <small>(ไม่บังคับ)</small></label>
+              <input type="text" id="plantName" placeholder="เช่น กะเพรา, โหระพา, มะเขือเทศ" maxlength="40" />
+            </div>
+
+            <h3 class="card-title">2. เริ่มวิเคราะห์</h3>
+            <div class="row-btns">
+              <button id="analyzeBtn" class="btn btn-primary" type="button" disabled>วิเคราะห์ความพร้อม</button>
+              <button id="resetBtn" class="btn btn-ghost" type="button">ล้าง</button>
+            </div>
+
+            <div class="progress hidden" id="progressBox">
+              <ol class="steps" id="stepsList">
+                <li>ตรวจจับต้นพืชในภาพ</li>
+                <li>ประเมินสีและความสมบูรณ์ของใบ</li>
+                <li>ประเมินลำต้น ความชื้น และราก</li>
+                <li>คำนวณคะแนนความพร้อม</li>
+              </ol>
+              <div class="bar" role="progressbar" aria-label="ความคืบหน้าการวิเคราะห์" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="progressBar"><span id="progressFill"></span></div>
+            </div>
+          </div>
+
+          <div class="card result-card" aria-live="polite">
+            <div class="result-empty" id="resultEmpty">
+              <svg viewBox="0 0 24 24" width="44" height="44" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+              <p><strong>ผลวิเคราะห์จะแสดงที่นี่</strong></p>
+              <span>อัปโหลดภาพแล้วกด &ldquo;วิเคราะห์ความพร้อม&rdquo;</span>
+            </div>
+
+            <div class="result hidden" id="resultBox">
+              <p class="status-badge" id="statusBadge">พร้อมลงปลูก</p>
+              <h3 class="card-title" id="resultTitle">ผลวิเคราะห์ต้นกล้า</h3>
+              <p class="result-desc" id="resultDesc"></p>
+
+              <div class="seg" role="group" aria-label="สลับมุมมองผลลัพธ์">
+                <button id="view2dBtn" type="button" aria-pressed="true">มุมมอง 2D</button>
+                <button id="view3dBtn" type="button" aria-pressed="false" disabled>มุมมอง 3D</button>
+              </div>
+
+              <div id="view2d">
+                <div class="score-wrap">
+                  <svg class="ring" viewBox="0 0 140 140" role="img" aria-label="คะแนนความพร้อม">
+                    <circle class="ring-bg" cx="70" cy="70" r="58" />
+                    <circle class="ring-fg" id="ringFg" cx="70" cy="70" r="58" />
+                  </svg>
+                  <div class="score-text"><strong id="scoreNum">0</strong><span>/ 100</span></div>
+                </div>
+              </div>
+              <div id="view3d" class="hidden">
+                <div id="plant3d" role="img" aria-label="โมเดลต้นพืช 3 มิติตามผลวิเคราะห์"></div>
+                <p class="view-note" id="threeDNote">กำลังโหลดโมเดล 3D&hellip;</p>
+              </div>
+
+              <ul class="metrics" id="metricsList"></ul>
+
+              <h4 class="rec-title" id="measuredTitle">ค่าที่วัดได้จากภาพจริง</h4>
+              <ul class="measured" id="measuredList"></ul>
+              <p class="method-note">วิธีวิเคราะห์: วัดสัดส่วนสีเขียว (Excess Green) ใบเหลือง และความมืดของดินจากพิกเซลภาพจริง ส่วนลำต้น/รากประเมินจากขนาดทรงพุ่ม</p>
+
+              <h4 class="rec-title">คำแนะนำ</h4>
+              <ul class="recs" id="recsList"></ul>
+
+              <button id="newScanBtn" class="btn btn-ghost btn-block" type="button">สแกนต้นใหม่</button>
+            </div>
+          </div>
+        </div>
+        <div class="card samples-card">
+          <h3 class="card-title">ภาพตัวอย่างเมล็ดพริก — แตะเพื่อสแกนเลย</h3>
+          <p class="section-sub samples-sub">ภาพตัวอย่าง 5 ระยะการเติบโต (ที่มา: Wikimedia Commons)</p>
+          <div class="samples-grid" id="sampleGrid"></div>
+          <p class="samples-credit" id="samplesCredit"></p>
+        </div>
+      </div>
+    </section>
+
+    <!-- LIVE -->
+    <section id="live" class="section">
+      <div class="container">
+        <h2>สแกน Realtime</h2>
+        <p class="section-sub">เปิดกล้อง ดูค่าวัดสด แล้วกดจับภาพเพื่อวิเคราะห์เต็มพร้อมภาพ 3D</p>
+        <div class="live-layout">
+          <div class="card live-card">
+            <div class="video-wrap" id="videoWrap">
+              <video id="liveVideo" playsinline muted autoplay></video>
+              <div class="video-idle" id="videoIdle">
+                <svg viewBox="0 0 24 24" width="40" height="40" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+                <p><strong>กล้องยังไม่เปิด</strong></p>
+                <span>กด &ldquo;เปิดกล้อง&rdquo; เพื่อเริ่มสแกนสด</span>
+              </div>
+              <span class="corner tl"></span><span class="corner tr"></span>
+              <span class="corner bl"></span><span class="corner br"></span>
+              <span class="live-dot hidden" id="liveDot">LIVE</span>
+              <span class="scan-beam hidden" id="liveBeam" aria-hidden="true"></span>
+            </div>
+            <p class="live-error hidden" id="liveError" role="alert"></p>
+            <div class="row-btns live-btns">
+              <button id="liveStartBtn" class="btn btn-primary" type="button">เปิดกล้อง</button>
+              <button id="liveCaptureBtn" class="btn btn-ghost" type="button" disabled>จับภาพ &amp; วิเคราะห์</button>
+              <button id="liveStopBtn" class="btn btn-ghost" type="button" disabled>ปิดกล้อง</button>
+            </div>
+          </div>
+          <div class="card live-metrics-card">
+            <h3 class="card-title">ค่าวัดสด <span class="live-pulse hidden" id="livePulse" aria-hidden="true"></span></h3>
+            <ul class="live-metrics" id="liveMetrics">
+              <li data-m="leaf">
+                <div class="metric-head"><span>สุขภาพใบ</span><span class="live-val">&ndash;</span></div>
+                <div class="metric-track"><span class="metric-fill"></span></div>
+              </li>
+              <li data-m="stem">
+                <div class="metric-head"><span>ลำต้น</span><span class="live-val">&ndash;</span></div>
+                <div class="metric-track"><span class="metric-fill"></span></div>
+              </li>
+              <li data-m="moisture">
+                <div class="metric-head"><span>ความชื้น</span><span class="live-val">&ndash;</span></div>
+                <div class="metric-track"><span class="metric-fill"></span></div>
+              </li>
+            </ul>
+            <p class="live-hint">ค่าวัดสดเป็นการประเมินเบื้องต้นจากเฟรมกล้อง กดจับภาพเพื่อวิเคราะห์เต็ม 4 มิติ + โมเดล 3D</p>
+          </div>
+        </div>
+        <canvas id="captureCanvas" class="hidden" aria-hidden="true"></canvas>
+      </div>
+    </section>
+
+    <!-- HOW -->
+    <section id="how" class="section section-alt">
+      <div class="container">
+        <h2>วิธีใช้งาน</h2>
+        <p class="section-sub">3 ขั้นตอนง่าย ๆ ใช้ได้ทั้งมือถือและคอมพิวเตอร์</p>
+        <ol class="steps-grid">
+          <li class="card">
+            <span class="step-num">1</span>
+            <h3>ถ่าย / อัปโหลดภาพ</h3>
+            <p>ถ่ายต้นกล้าให้เห็นใบและลำต้นชัด ๆ แสงธรรมชาติจะให้ผลดีที่สุด</p>
+          </li>
+          <li class="card">
+            <span class="step-num">2</span>
+            <h3>กดวิเคราะห์</h3>
+            <p>ระบบประเมิน 4 มิติ ได้แก่ ใบ ลำต้น ความชื้น และระบบราก</p>
+          </li>
+          <li class="card">
+            <span class="step-num">3</span>
+            <h3>อ่านผล + ทำตามคำแนะนำ</h3>
+            <p>ได้คะแนนความพร้อม สถานะ และวิธีดูแลก่อนย้ายลงแปลง</p>
+          </li>
+        </ol>
+      </div>
+    </section>
+
+    <!-- TIPS -->
+    <section id="tips" class="section">
+      <div class="container">
+        <h2>เคล็ดลับต้นกล้าแข็งแรง</h2>
+        <p class="section-sub">พื้นฐานที่ทำให้คะแนนความพร้อมสูงตั้งแต่แรก</p>
+        <div class="tips-grid">
+          <article class="card tip">
+            <h3>แสงพอดี ไม่จัดเกิน</h3>
+            <p>ต้นกล้าต้องการแสงรำไร 4–6 ชั่วโมงต่อวัน แดดจัดทั้งวันทำให้ใบไหม้และคะแนนใบตก</p>
+          </article>
+          <article class="card tip">
+            <h3>รดน้ำพอชุ่ม ไม่แฉะ</h3>
+            <p>รดเช้า–เย็นแค่พอดินชุ่ม น้ำขังทำให้รากเน่า ซึ่งเป็นสาเหตุหลักของต้นกล้าไม่พร้อมปลูก</p>
+          </article>
+          <article class="card tip">
+            <h3>ให้ลมโกรกบ้าง</h3>
+            <p>ลมเบา ๆ ช่วยให้ลำต้นสร้างเนื้อเยื่อแข็งแรง ต้นไม่ยืดยาวอ่อนแอ (ขี้เกียจล้ม)</p>
+          </article>
+          <article class="card tip">
+            <h3>อย่ารีบย้ายกระถาง</h3>
+            <p>รอให้รากเดินเต็มก่อนย้าย ถอนดูเบา ๆ ถ้ารากยังน้อยให้อนุบาลต่ออีก 5–7 วัน</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- HISTORY -->
+    <section id="history" class="section section-alt">
+      <div class="container">
+        <div class="history-head">
+          <div>
+            <h2>ประวัติการสแกน</h2>
+            <p class="section-sub">บันทึกอัตโนมัติในเครื่องของคุณ (สูงสุด 10 รายการ)</p>
+          </div>
+          <button id="clearHistoryBtn" class="btn btn-ghost btn-small" type="button">ล้างประวัติ</button>
+        </div>
+        <ul class="history-list" id="historyList"></ul>
+        <p class="history-empty" id="historyEmpty">ยังไม่มีประวัติการสแกน — เริ่มสแกนต้นแรกของคุณเลย</p>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container">
+      <p><strong>VitroVision</strong> &mdash; สแกนพืช รู้ทันทีว่าพร้อมลงปลูกหรือยัง</p>
+      <p class="footnote">เวอร์ชันเดโมเพื่อการออกแบบ ผลวิเคราะห์เป็นการจำลองเพื่อแสดงแนวคิดการทำงาน</p>
+    </div>
+  </footer>
+
+  <script src="script.js"></script>
+  <script type="module" src="plant3d.js"></script>
+</body>
+</html>

@@ -1,0 +1,49 @@
+{
+  "crop": "chili",
+  "cropName": "พริกขี้หนู",
+  "source": "Wikimedia Commons",
+  "updated": "2026-10-11",
+  "note": "ภาพตัวอย่าง 5 ระยะการเติบโตของพริก สำหรับกดสแกนทดลองใน VitroVision — เปลี่ยน/เพิ่มรูปได้โดยแก้ไฟล์นี้ไฟล์เดียว",
+  "samples": [
+    {
+      "stage": 1,
+      "file": "samples/chili/stage-1-seed.jpg",
+      "label": "ระยะเมล็ด",
+      "age": "วันที่ 0",
+      "desc": "เมล็ดแห้งพร้อมเพาะ ยังไม่พร้อมปลูก",
+      "credit": { "author": "Jacopo Werther", "license": "CC BY-SA 4.0", "url": "https://commons.wikimedia.org/wiki/File:Pepper_(Capsicum_spp.)_seeds.jpg" }
+    },
+    {
+      "stage": 2,
+      "file": "samples/chili/stage-2-sprout.jpg",
+      "label": "ระยะเริ่มงอก",
+      "age": "วันที่ 5–10",
+      "desc": "รากโผล่ ใบเลี้ยงกาง ยังไม่พร้อมย้าย",
+      "credit": { "author": "Maja Dumat", "license": "CC BY 2.0", "url": "https://commons.wikimedia.org/wiki/File:Chili_Keimlinge_(13903218712).jpg" }
+    },
+    {
+      "stage": 3,
+      "file": "samples/chili/stage-3-nursery.jpg",
+      "label": "ระยะต้นอ่อนในถาดเพาะ",
+      "age": "วันที่ 10–20",
+      "desc": "ใบเลี้ยงคู่ เริ่มมีใบจริง อนุบาลต่อ",
+      "credit": { "author": "Maja Dumat", "license": "CC BY 2.0", "url": "https://commons.wikimedia.org/wiki/File:Chili-Anzucht_(16596258083).jpg" }
+    },
+    {
+      "stage": 4,
+      "file": "samples/chili/stage-4-seedling.jpg",
+      "label": "ระยะต้นกล้า",
+      "age": "วันที่ 20–30",
+      "desc": "ใบจริงหลายคู่ แข็งแรง ใกล้พร้อมย้าย",
+      "credit": { "author": "Nafisathallah", "license": "CC BY-SA 4.0", "url": "https://commons.wikimedia.org/wiki/File:Bibit_Cabai.jpg" }
+    },
+    {
+      "stage": 5,
+      "file": "samples/chili/stage-5-transplant.jpg",
+      "label": "ระยะพร้อมย้ายปลูก",
+      "age": "วันที่ 30–45",
+      "desc": "ต้นแข็งแรง ใบจริง 4–6 ใบ ย้ายลงแปลงได้",
+      "credit": { "author": "Stussll", "license": "CC BY-SA 4.0", "url": "https://commons.wikimedia.org/wiki/File:Pepper_plant_starter.jpg" }
+    }
+  ]
+}
