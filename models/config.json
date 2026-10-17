@@ -1,0 +1,15 @@
+{
+  "arch": "unet_small",
+  "encoder": "timm-mobilenetv3_small_100",
+  "in_channels": 3,
+  "out_channels": 1,
+  "img_size": 256,
+  "input_norm": "resize 256x256, /255",
+  "output_act": "sigmoid",
+  "framework": "pytorch",
+  "num_params": 3585649,
+  "task": "plant segmentation in vitro bottle",
+  "dataset": "Project-AgML/greenhouse_leafy_segmentation",
+  "trained_on": "greenhouse public dataset (1200 pairs)",
+  "notes": "NOT fine-tuned on 100-bottle test set; READY_HEIGHT=0.20"
+}

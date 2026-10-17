@@ -1,0 +1,5 @@
+# local tooling artifacts
+models/*.bin
+tools/out/
+__pycache__/
+*.pyc

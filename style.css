@@ -367,6 +367,9 @@ img { max-width: 100%; display: block; }
 .measured li { background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 0.5rem 0.7rem; font-size: 0.8rem; color: var(--muted); }
 .measured strong { display: block; font-size: 1.05rem; color: var(--green-900); }
 .method-note { font-size: 0.78rem; color: var(--muted); margin-bottom: 1.1rem; }
+.ai-shot { margin: 0.2rem 0 0.8rem; display: grid; gap: 0.4rem; justify-items: start; }
+.ai-shot img { width: 100%; max-width: 360px; border-radius: 12px; border: 1px solid var(--line); display: block; }
+.ai-shot-note { font-size: 0.78rem; color: var(--muted); }
 
 @media (min-width: 640px) {
   .samples-grid { grid-template-columns: repeat(3, 1fr); }

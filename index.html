@@ -140,7 +140,11 @@
 
               <h4 class="rec-title" id="measuredTitle">ค่าที่วัดได้จากภาพจริง</h4>
               <ul class="measured" id="measuredList"></ul>
-              <p class="method-note">วิธีวิเคราะห์: วัดสัดส่วนสีเขียว (Excess Green) ใบเหลือง และความมืดของดินจากพิกเซลภาพจริง ส่วนลำต้น/รากประเมินจากขนาดทรงพุ่ม</p>
+              <div class="ai-shot hidden" id="aiShot">
+                <img id="aiShotImg" alt="พื้นที่ที่ AI ตรวจจับว่าเป็นต้นพืช (สีเขียว)" />
+                <span class="ai-shot-note">สีเขียว = ส่วนที่โมเดล AI แยกได้ว่าเป็นต้นพืช (ไม่ใช่การวาดทับแบบสุ่ม)</span>
+              </div>
+              <p class="method-note" id="methodNote">วิธีวิเคราะห์: ใช้โมเดล AI (U-Net + MobileNetV3-Small) แยกส่วนต้นพืชออกจากภาพ แล้ววัดขนาดต้น สีใบ และความมืดของดินจากพิกเซลจริง</p>
 
               <h4 class="rec-title">คำแนะนำ</h4>
               <ul class="recs" id="recsList"></ul>
@@ -200,7 +204,7 @@
                 <div class="metric-track"><span class="metric-fill"></span></div>
               </li>
             </ul>
-            <p class="live-hint">ค่าวัดสดเป็นการประเมินเบื้องต้นจากเฟรมกล้อง กดจับภาพเพื่อวิเคราะห์เต็ม 4 มิติ + โมเดล 3D</p>
+            <p class="live-hint">ค่าวัดสดประเมินจากเฟรมกล้องด้วยโมเดล AI จริง (อัปเดตทุก ~2 วินาที) กดจับภาพเพื่อวิเคราะห์เต็ม 4 มิติ + โมเดล 3D</p>
           </div>
         </div>
         <canvas id="captureCanvas" class="hidden" aria-hidden="true"></canvas>
@@ -277,10 +281,11 @@
   <footer class="site-footer">
     <div class="container">
       <p><strong>VitroVision</strong> &mdash; สแกนพืช รู้ทันทีว่าพร้อมลงปลูกหรือยัง</p>
-      <p class="footnote">เวอร์ชันเดโมเพื่อการออกแบบ ผลวิเคราะห์เป็นการจำลองเพื่อแสดงแนวคิดการทำงาน</p>
+      <p class="footnote">ผลวิเคราะห์จากโมเดล AI แยกส่วนต้นพืช (U-Net + MobileNetV3-Small, Val Dice 0.98) ร่วมกับการวัดพิกเซลจริง — โมเดลจาก Peeradon4778/vitrovision-unet-small (Hugging Face, สัญญาอนุญาต MIT)</p>
     </div>
   </footer>
 
+  <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.20.1/dist/ort.min.js"></script>
   <script src="script.js"></script>
   <script type="module" src="plant3d.js"></script>
 </body>

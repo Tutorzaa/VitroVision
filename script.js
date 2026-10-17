@@ -1,4 +1,4 @@
-/* VitroVision — plant readiness demo (front-end simulation) */
+/* VitroVision — plant readiness checker (real AI segmentation + pixel measurement) */
 (function () {
   "use strict";
 
@@ -37,6 +37,9 @@
   var metricsList = document.getElementById("metricsList");
   var measuredTitle = document.getElementById("measuredTitle");
   var measuredList = document.getElementById("measuredList");
+  var methodNote = document.getElementById("methodNote");
+  var aiShot = document.getElementById("aiShot");
+  var aiShotImg = document.getElementById("aiShotImg");
   var recsList = document.getElementById("recsList");
   var newScanBtn = document.getElementById("newScanBtn");
   var historyList = document.getElementById("historyList");
@@ -87,6 +90,7 @@
     uploadHint.classList.add("hidden");
     uploadZone.classList.add("has-image");
     analyzeBtn.disabled = false;
+    loadUnet(); // โหลดโมเดล AI ล่วงหน้าเบื้องหลัง เพื่อให้กดวิเคราะห์แล้วเร็ว
   }
 
   fileInput.addEventListener("change", function () {
@@ -121,7 +125,7 @@
     resultEmpty.classList.remove("hidden");
   }
 
-  // ---------- Analysis (simulated) ----------
+  // ---------- Analysis flow ----------
   analyzeBtn.addEventListener("click", startAnalysis);
 
   function startAnalysis() {
@@ -131,15 +135,31 @@
     resultEmpty.classList.add("hidden");
     resultBox.classList.add("hidden");
     progressBox.classList.remove("hidden");
-    // Real pixel measurement first, then animated steps
-    analyzeImagePixels(currentFile).then(function (f) {
-      pendingFeatures = f;
-      runSteps(0);
+    updateStepTexts();
+    var t0 = Date.now();
+    var pixelP = analyzeImagePixels(currentFile);
+    var unetP = unetAnalyzeFromFile(currentFile);
+    Promise.all([pixelP, unetP]).then(function (r) {
+      pendingFeatures = r[0];
+      pendingUnet = r[1];
+      // keep the progress animation readable even when analysis is fast
+      var rest = Math.max(0, 2200 - (Date.now() - t0));
+      setTimeout(function () { runSteps(0); }, rest);
     });
+  }
+
+  function updateStepTexts() {
+    if (!stepsList.length) return;
+    var s0 = stepsList[0];
+    if (unetState === "ready") s0.textContent = "ตรวจจับต้นพืชด้วยโมเดล AI (U-Net)";
+    else if (unetState === "loading") s0.textContent = "กำลังโหลดโมเดล AI (ครั้งแรก ~14 MB)…";
+    else if (unetState === "failed") s0.textContent = "ตรวจจับต้นพืชในภาพ (โหมดวัดสีพื้นฐาน)";
+    else s0.textContent = "ตรวจจับต้นพืชในภาพ";
   }
 
   // ---------- Real image measurement (no more random simulation) ----------
   var pendingFeatures = null;
+  var pendingUnet = null;
 
   function analyzeImagePixels(file) {
     return new Promise(function (resolve) {
@@ -163,6 +183,197 @@
       img.onerror = function () { URL.revokeObjectURL(url); resolve(null); };
       img.src = url;
     });
+  }
+
+  // ---------- AI model: U-Net + MobileNetV3-Small (ONNX, onnxruntime-web) ----------
+  // โมเดลจริงจาก Hugging Face: Peeradon4778/vitrovision-unet-small (MIT, Val Dice 0.98)
+  // แยก "ส่วนต้นพืช" ออกจากภาพด้วยการเรียนรู้ของเครื่อง จากนั้นวัดขนาด/สีจากพิกเซลจริง
+  var UNET_URL = "models/vitrovision-unet-small.onnx";
+  var UNET_ORT_BASE = "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.20.1/dist/";
+  var UNET_SIZE = 256;
+  var UNET_MIN_COVERAGE = 0.008; // ต่ำกว่านี้ = โมเดลไม่พบต้นพืชในภาพ
+  var UNET_HEIGHT_REF = 0.55;    // ความสูงต้น/ความสูงภาพ ที่ถือว่า "เต็มขนาด"
+  var UNET_MASS_REF = 0.06;      // สัดส่วนพื้นที่ต้น/ภาพ ที่ถือว่า "เต็มขนาด"
+
+  var unetSession = null;
+  var unetState = "idle"; // idle | loading | ready | failed
+  var unetPromise = null;
+
+  function loadUnet() {
+    if (unetState === "ready") return Promise.resolve(unetSession);
+    if (unetState === "failed") return Promise.resolve(null);
+    if (unetPromise) return unetPromise;
+    unetState = "loading";
+    try {
+      if (typeof ort === "undefined") throw new Error("ort not loaded");
+      ort.env.wasm.wasmPaths = UNET_ORT_BASE;
+      unetPromise = ort.InferenceSession.create(UNET_URL, { executionProviders: ["wasm"] })
+        .then(function (sess) { unetSession = sess; unetState = "ready"; return sess; })
+        .catch(function () { unetState = "failed"; return null; });
+    } catch (e) {
+      unetState = "failed";
+      unetPromise = Promise.resolve(null);
+    }
+    return unetPromise;
+  }
+
+  function unetAnalyzeFromFile(file) {
+    return new Promise(function (resolve) {
+      var url = URL.createObjectURL(file);
+      var img = new Image();
+      img.onload = function () {
+        unetAnalyze(img, true).then(
+          function (u) { URL.revokeObjectURL(url); resolve(u); },
+          function () { URL.revokeObjectURL(url); resolve(null); }
+        );
+      };
+      img.onerror = function () { URL.revokeObjectURL(url); resolve(null); };
+      img.src = url;
+    });
+  }
+
+  function unetAnalyze(src, wantOverlay) {
+    return loadUnet().then(function (sess) {
+      if (!sess) return null;
+      var c = document.createElement("canvas");
+      c.width = UNET_SIZE;
+      c.height = UNET_SIZE;
+      var ctx = c.getContext("2d");
+      ctx.drawImage(src, 0, 0, UNET_SIZE, UNET_SIZE);
+      var d = ctx.getImageData(0, 0, UNET_SIZE, UNET_SIZE).data;
+      var n = UNET_SIZE * UNET_SIZE;
+      var input = new Float32Array(3 * n);
+      for (var i = 0; i < n; i++) {
+        input[i] = d[i * 4] / 255;
+        input[n + i] = d[i * 4 + 1] / 255;
+        input[2 * n + i] = d[i * 4 + 2] / 255;
+      }
+      var nowF = (window.performance && performance.now) ? performance.now.bind(performance) : function () { return Date.now(); };
+      var t0 = nowF();
+      return sess.run({ input: new ort.Tensor("float32", input, [1, 3, UNET_SIZE, UNET_SIZE]) })
+        .then(function (res) {
+          return unetMetrics(res.mask.data, d, UNET_SIZE, UNET_SIZE, nowF() - t0, !!wantOverlay);
+        });
+    });
+  }
+
+  function unetMetrics(prob, rgba, w, h, ms, wantOverlay) {
+    var n = w * h;
+    var area = 0, minX = w, maxX = -1, minY = h, maxY = -1, greenIn = 0, yellowIn = 0;
+    var mask = new Uint8Array(n);
+    for (var i = 0; i < n; i++) {
+      if (prob[i] > 0.5) {
+        mask[i] = 1;
+        area++;
+        var x = i % w, y = (i - x) / w;
+        if (x < minX) minX = x;
+        if (x > maxX) maxX = x;
+        if (y < minY) minY = y;
+        if (y > maxY) maxY = y;
+        var j = i * 4;
+        var r = rgba[j] / 255, g = rgba[j + 1] / 255, b = rgba[j + 2] / 255;
+        if (g > r + 0.03 && g > b + 0.03 && (2 * g - r - b) > 0.08) greenIn++;
+        else if (r > 0.4 && g > 0.35 && b < 0.45 && r >= g && (r - b) > 0.12) yellowIn++;
+      }
+    }
+    var coverage = area / n;
+    var height = area > 0 ? (maxY - minY + 1) / h : 0;
+    var width = area > 0 ? (maxX - minX + 1) / w : 0;
+    var compact = area > 0 ? area / ((maxY - minY + 1) * (maxX - minX + 1)) : 0;
+    var greenPct = greenIn / Math.max(area, 1);
+    var yellowPct = yellowIn / Math.max(area, 1);
+
+    var maskCanvas = null;
+    if (wantOverlay && area > 0) {
+      var ov = document.createElement("canvas");
+      ov.width = w;
+      ov.height = h;
+      var octx = ov.getContext("2d");
+      var idata = octx.createImageData(w, h);
+      var od = idata.data;
+      for (var k = 0; k < n; k++) {
+        var q = k * 4;
+        od[q] = rgba[q];
+        od[q + 1] = rgba[q + 1];
+        od[q + 2] = rgba[q + 2];
+        od[q + 3] = 255;
+        if (mask[k]) {
+          od[q] = Math.round(0.5 * rgba[q] + 0.5 * 60);
+          od[q + 1] = Math.round(0.5 * rgba[q + 1] + 0.5 * 210);
+          od[q + 2] = Math.round(0.5 * rgba[q + 2] + 0.5 * 80);
+        }
+      }
+      octx.putImageData(idata, 0, 0);
+      octx.strokeStyle = "#e02424";
+      octx.lineWidth = 2;
+      octx.strokeRect(minX + 1, minY + 1, Math.max(maxX - minX - 1, 1), Math.max(maxY - minY - 1, 1));
+      maskCanvas = ov;
+    }
+    return {
+      coverage: coverage,
+      height: height,
+      width: width,
+      compact: compact,
+      greenPct: greenPct,
+      yellowPct: yellowPct,
+      maskCanvas: maskCanvas,
+      ms: ms
+    };
+  }
+
+  function modelCore(u, f) {
+    // ขนาดต้นจากพื้นที่ (model mask) + ความสูงเทียบภาพ
+    var sizeScore = Math.min(1, u.height / UNET_HEIGHT_REF);
+    var massScore = Math.min(1, u.coverage / UNET_MASS_REF);
+    var canopy = 100 * (0.4 * sizeScore + 0.6 * massScore);
+    // ความน่าเชื่อถือว่า "ก้อนที่ตรวจได้" เป็นใบพืชจริง: สัดส่วนสีเขียว vs สีอื่นในก้อนนั้น
+    // (ภาพเมล็ดพริกแห้ง: โมเดลจับเป็นก้อนได้ แต่สีครีม/เหลืองเกือบ 100% → pure ต่ำ → คะแนนถูกกด)
+    var colored = u.greenPct + u.yellowPct;
+    var organic = colored > 0 ? u.greenPct / (colored + 0.05) : 0;
+    var purity = 0.22 + 0.78 * organic;
+    var unhealthy = u.yellowPct / (colored + 0.05);
+    var moisture = f && f.soilDark >= 0
+      ? clampNum(100 - Math.abs(f.soilDark - 0.30) * 260, 5, 97)
+      : clampNum(28 + canopy * 0.4, 5, 97);
+    if (u.coverage < UNET_MIN_COVERAGE) {
+      return {
+        values: { leaf: 8, stem: 10, moisture: Math.min(moisture, 35), roots: 8 },
+        measured: modelMeasured(u, f),
+        noPlant: true,
+        note: null,
+        source: "ai"
+      };
+    }
+    var note = null;
+    if (organic < 0.25 && u.yellowPct > 0.35 && u.greenPct < 0.15) {
+      note = "สิ่งที่ตรวจพบในภาพเป็นสีเหลือง/ครีมเป็นหลัก (เช่น เมล็ด) ไม่ใช่ใบพืชสีเขียว — รอให้งอกเป็นต้นเขียวแล้วสแกนใหม่";
+    }
+    return {
+      values: {
+        leaf: clampNum(8 + canopy * purity * (1 - 0.55 * unhealthy), 5, 98),
+        stem: clampNum(16 + canopy * purity * 0.78, 8, 97),
+        moisture: moisture,
+        roots: clampNum(14 + canopy * purity * 0.72, 8, 95)
+      },
+      measured: modelMeasured(u, f),
+      noPlant: false,
+      note: note,
+      source: "ai"
+    };
+  }
+
+  function modelMeasured(u, f) {
+    var out = [
+      { label: "ต้นพืช (AI แยกส่วน)", text: (u.coverage * 100).toFixed(1) + "% ของภาพ" },
+      { label: "ความสูงเทียบภาพ", text: (u.height * 100).toFixed(0) + "%" },
+      { label: "สีเขียวในต้น", text: (u.greenPct * 100).toFixed(0) + "%" },
+      { label: "ใบเหลืองในต้น", text: (u.yellowPct * 100).toFixed(0) + "%" }
+    ];
+    if (f) {
+      out.push({ label: "ความมืดของดิน", text: f.soilDark >= 0 ? (f.soilDark * 100).toFixed(0) + "%" : "ไม่พบดิน" });
+      out.push({ label: "ความสว่างภาพ", text: (f.bright * 100).toFixed(0) + "%" });
+    }
+    return out;
   }
 
   function computeFeatures(d, w, h) {
@@ -198,14 +409,19 @@
 
   function clampNum(v, a, b) { return Math.max(a, Math.min(b, Math.round(v))); }
 
-  function metricsFromFeatures(f) {
+  function metricsFromFeatures(f, u) {
+    if (u) return modelCore(u, f);
     if (!f) { // fallback if pixels unreadable: seeded value so it still works
       var seed = hashSeed(currentFile.name + "|" + currentFile.size + "|" + currentFile.lastModified);
       var rand = mulberry32(seed);
       var fv = {};
       METRICS.forEach(function (m) { fv[m.key] = 42 + Math.floor(rand() * 57); });
-      return { values: fv, measured: null, noPlant: false };
+      return { values: fv, measured: null, noPlant: false, source: "seed" };
     }
+    return pixelCore(f);
+  }
+
+  function pixelCore(f) {
     // Center-weighted green: the plant is usually centered, edges are often background
     var effGreen = 0.65 * f.centerGreen + 0.35 * f.green;
     // Detection gate: almost no leaf-green = seeds only / no plant in frame
@@ -220,7 +436,8 @@
       return {
         values: { leaf: 8, stem: 10, moisture: Math.min(moisture, 35), roots: 8 },
         measured: buildMeasured(f),
-        noPlant: true
+        noPlant: true,
+        source: "pixel"
       };
     }
     return {
@@ -231,7 +448,8 @@
         roots: clampNum(14 + coverage * 0.72, 8, 95)
       },
       measured: buildMeasured(f),
-      noPlant: false
+      noPlant: false,
+      source: "pixel"
     };
   }
 
@@ -326,14 +544,16 @@
   }
 
   function finishAnalysis() {
-    var res = metricsFromFeatures(pendingFeatures);
+    var u = pendingUnet;
+    var res = metricsFromFeatures(pendingFeatures, pendingUnet);
     pendingFeatures = null;
+    pendingUnet = null;
     var values = res.values;
     var score = Math.round(
       METRICS.reduce(function (sum, m) { return sum + values[m.key] * m.weight; }, 0)
     );
 
-    renderResult(score, values, res.measured, res.noPlant);
+    renderResult(score, values, res.measured, res.noPlant, res.source, res.note, u);
     saveHistory(score);
 
     analyzing = false;
@@ -356,7 +576,7 @@
     return { cls: "bad", text: "ยังไม่พร้อมลงปลูก", days: prof.nurseDays.notReady };
   }
 
-  function renderResult(score, values, measured, noPlant) {
+  function renderResult(score, values, measured, noPlant, source, note, u) {
     var prof = getProfile();
     var st = statusOf(score, prof);
     var name = plantNameInput.value.trim();
@@ -371,7 +591,9 @@
         ? "ต้นกล้าแข็งแรงดี สามารถย้ายลงแปลงปลูกได้เลย ควรย้ายช่วงเย็นและรดน้ำตามทันที"
         : "ต้นกล้ายังต้องการการดูแลอีกประมาณ " + st.days + " วันก่อนย้ายลงแปลง ดูคำแนะนำด้านล่าง";
     if (noPlant) {
-      resultDesc.textContent = "ภาพนี้แทบไม่มีสีเขียวของใบพืชเลย — อาจเป็นเมล็ดล้วนหรือถ่ายไม่ติดต้น จึงให้คะแนนต่ำไว้ก่อน ลองถ่ายใหม่ให้เห็นใบชัด ๆ";
+      resultDesc.textContent = source === "ai"
+        ? "โมเดล AI ไม่พบส่วนของต้นพืชในภาพนี้ — อาจเป็นเมล็ด ภาพเบลอ หรือถ่ายไม่ติดต้น ลองถ่ายใหม่ให้เห็นใบชัด ๆ"
+        : "ภาพนี้แทบไม่มีสีเขียวของใบพืชเลย — อาจเป็นเมล็ดล้วนหรือถ่ายไม่ติดต้น จึงให้คะแนนต่ำไว้ก่อน ลองถ่ายใหม่ให้เห็นใบชัด ๆ";
     }
 
     // Score ring (animate)
@@ -417,10 +639,32 @@
       measuredList.classList.add("hidden");
     }
 
+    // AI segmentation overlay (แสดงเฉพาะเมื่อโมเดล AI ทำงานจริง)
+    if (u && u.maskCanvas) {
+      try {
+        aiShotImg.src = u.maskCanvas.toDataURL("image/png");
+        aiShot.classList.remove("hidden");
+      } catch (e) {
+        aiShot.classList.add("hidden");
+      }
+    } else {
+      aiShot.classList.add("hidden");
+      aiShotImg.removeAttribute("src");
+    }
+
+    methodNote.textContent = source === "ai"
+      ? "วิธีวิเคราะห์: โมเดล AI (U-Net + MobileNetV3-Small, Val Dice 0.98) แยกส่วนต้นพืชออกจากภาพ แล้ววัดขนาดต้น สีใบ (Excess Green) และความมืดของดินจากพิกเซลจริง"
+      : "วิธีวิเคราะห์: วัดสีพื้นฐาน (Excess Green) จากพิกเซลภาพจริง — ครั้งนี้โหลดโมเดล AI ไม่ได้ (ครั้งแรกต้องต่ออินเทอร์เน็ต)";
+
     // Recommendations (dataset-driven)
     recsList.innerHTML = "";
-    var recItems = buildRecs(values, st, prof);
-    if (noPlant) recItems.unshift("ถ่ายภาพใหม่ให้เห็นใบและลำต้นชัด ๆ วางต้นกล้าไว้กลางภาพ ใช้แสงธรรมชาติ");
+    var recItems;
+    if (note) {
+      recItems = [note, "ถ่ายภาพใหม่ให้เห็นต้นพืชสีเขียวชัด ๆ วางไว้กลางภาพ ใช้แสงธรรมชาติ"];
+    } else {
+      recItems = buildRecs(values, st, prof);
+      if (noPlant) recItems.unshift("ถ่ายภาพใหม่ให้เห็นใบและลำต้นชัด ๆ วางต้นกล้าไว้กลางภาพ ใช้แสงธรรมชาติ");
+    }
     recItems.forEach(function (text) {
       var li = document.createElement("li");
       li.textContent = text;
@@ -489,7 +733,12 @@
   // ---------- Realtime camera ----------
   var liveStream = null;
   var liveTimer = null;
-  var liveVals = { leaf: 70, stem: 70, moisture: 70 };
+  var liveVals = { leaf: null, stem: null, moisture: null };
+  var liveBusy = false;
+  var liveHasData = false;
+  var liveFrame = document.createElement("canvas");
+  liveFrame.width = 256;
+  liveFrame.height = 256;
 
   function liveMetricColor(v) {
     return v >= 80 ? "#2fa14f" : v >= 60 ? "#d97706" : "#dc2626";
@@ -498,21 +747,48 @@
     for (var i = 0; i < liveMetricEls.length; i++) {
       (function (li) {
         var key = li.getAttribute("data-m");
-        var v = Math.round(liveVals[key]);
-        li.querySelector(".live-val").textContent = v + "/100";
+        var raw = liveVals[key];
+        var val = (typeof raw === "number") ? Math.round(raw) : null;
+        li.querySelector(".live-val").textContent = val === null ? "–" : val + "/100";
         var fill = li.querySelector(".metric-fill");
-        fill.style.width = v + "%";
-        fill.style.background = liveMetricColor(v);
+        fill.style.width = (val === null ? 0 : val) + "%";
+        fill.style.background = val === null ? "#d1d5db" : liveMetricColor(val);
       })(liveMetricEls[i]);
     }
   }
-  function tickLive() {
-    var keys = ["leaf", "stem", "moisture"];
-    for (var i = 0; i < keys.length; i++) {
-      var k = keys[i];
-      liveVals[k] = Math.max(38, Math.min(97, liveVals[k] + (Math.random() * 10 - 5)));
+  function applyLive(res) {
+    if (res && liveStream) {
+      var keys = ["leaf", "stem", "moisture"];
+      for (var i = 0; i < keys.length; i++) {
+        var k = keys[i];
+        var t = res.values[k];
+        liveVals[k] = (liveHasData && typeof liveVals[k] === "number")
+          ? liveVals[k] * 0.55 + t * 0.45
+          : t;
+      }
+      liveHasData = true;
+      paintLiveMetrics();
     }
-    paintLiveMetrics();
+    liveBusy = false;
+  }
+  function tickLive() {
+    if (liveBusy || !liveVideo.videoWidth) return;
+    liveBusy = true;
+    var f = null;
+    try {
+      var fctx = liveFrame.getContext("2d");
+      fctx.drawImage(liveVideo, 0, 0, 256, 256);
+      f = computeFeatures(fctx.getImageData(0, 0, 256, 256).data, 256, 256);
+    } catch (e) { f = null; }
+    if (unetState !== "failed" && unetState !== "ready") loadUnet(); // โหลดโมเดลระหว่างดูภาพสด
+    if (unetState === "ready") {
+      unetAnalyze(liveVideo, false).then(
+        function (u) { applyLive(u ? modelCore(u, f) : (f ? pixelCore(f) : null)); },
+        function () { applyLive(f ? pixelCore(f) : null); }
+      );
+    } else {
+      applyLive(f ? pixelCore(f) : null);
+    }
   }
   function showLiveError(err) {
     var msg = "เปิดกล้องไม่ได้";
@@ -549,9 +825,11 @@
         livePulse.classList.remove("hidden");
         liveCaptureBtn.disabled = false;
         liveStopBtn.disabled = false;
-        liveVals = { leaf: 62 + Math.random() * 20, stem: 62 + Math.random() * 20, moisture: 55 + Math.random() * 25 };
+        liveVals = { leaf: null, stem: null, moisture: null };
+        liveHasData = false;
         paintLiveMetrics();
-        liveTimer = setInterval(tickLive, 2000);
+        liveTimer = setInterval(tickLive, 2200);
+        tickLive();
       })
       .catch(function (err) {
         liveStartBtn.disabled = false;
