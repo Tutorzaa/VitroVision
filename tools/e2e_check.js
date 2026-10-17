@@ -1,6 +1,7 @@
 /* E2E check: drive the real site in headless Chrome via CDP and read analysis results. */
 const SAMPLES = [0, 1, 2, 3, 4];
 const PORT = 9222;
+const URLMATCH = process.env.VV_URL_MATCH || "8123";
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
@@ -8,7 +9,7 @@ async function connect() {
   for (let i = 0; i < 40; i++) {
     try {
       const list = await fetch(`http://127.0.0.1:${PORT}/json/list`).then(r => r.json());
-      const page = list.find(t => t.type === "page" && t.url.includes("8123"));
+      const page = list.find(t => t.type === "page" && t.url.includes(URLMATCH));
       if (page) return page.webSocketDebuggerUrl;
     } catch (e) { /* retry */ }
     await sleep(500);
