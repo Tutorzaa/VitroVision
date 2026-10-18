@@ -1,10 +1,18 @@
-/* VitroVision — plant readiness checker (real AI segmentation + pixel measurement) */
+/* VitroVision — ตรวจความพร้อมต้นกล้าในขวดเพาะเลี้ยง (tissue-culture readiness)
+   จริงจังทุกค่า: AI segmentation (U-Net ONNX) + ตรวจคุณภาพภาพ (แสงสะท้อน/ฝ้า) + วัดพิกเซลจริง */
 (function () {
   "use strict";
 
   var RING_C = 364.4; // 2 * PI * 58
   var HISTORY_KEY = "vitroVisionHistory";
   var HISTORY_MAX = 10;
+  var SESSION_KEY = "vitroVisionSession";
+  var SESSION_MAX = 300;
+
+  // ---------- เกณฑ์ตัดสิน (ตรงกับ README โมเดล + ข้อเสนอ YSC) ----------
+  var READY_HEIGHT = 0.20;   // height_proxy: ความสูงต้น/ความสูงภาพ ≥ 20% = พร้อมย้ายออกจากขวด
+  var GLARE_MAX = 40;        // % แสงสะท้อนในโซนต้น สูงกว่านี้ = ให้ "ตรวจเอง"
+  var COND_MAX = 40;         // % ฝ้า/ละอองน้ำ สูงกว่านี้ = ให้ "ตรวจเอง"
 
   var METRICS = [
     { key: "leaf", label: "สุขภาพใบ", weight: 0.35 },
@@ -32,14 +40,24 @@
   var statusBadge = document.getElementById("statusBadge");
   var resultTitle = document.getElementById("resultTitle");
   var resultDesc = document.getElementById("resultDesc");
+  var gateBox = document.getElementById("gateBox");
+  var gateReason = document.getElementById("gateReason");
+  var gateTips = document.getElementById("gateTips");
+  var scoreWrap = document.getElementById("scoreWrap");
   var ringFg = document.getElementById("ringFg");
   var scoreNum = document.getElementById("scoreNum");
+  var scoreCaption = document.getElementById("scoreCaption");
+  var confLine = document.getElementById("confLine");
   var metricsList = document.getElementById("metricsList");
   var measuredTitle = document.getElementById("measuredTitle");
   var measuredList = document.getElementById("measuredList");
   var methodNote = document.getElementById("methodNote");
   var aiShot = document.getElementById("aiShot");
   var aiShotImg = document.getElementById("aiShotImg");
+  var reportCard = document.getElementById("reportCard");
+  var reportText = document.getElementById("reportText");
+  var copyReportBtn = document.getElementById("copyReportBtn");
+  var timingLine = document.getElementById("timingLine");
   var recsList = document.getElementById("recsList");
   var newScanBtn = document.getElementById("newScanBtn");
   var historyList = document.getElementById("historyList");
@@ -63,10 +81,22 @@
   var captureCanvas = document.getElementById("captureCanvas");
   var sampleGrid = document.getElementById("sampleGrid");
   var samplesCredit = document.getElementById("samplesCredit");
+  // lab / research mode
+  var timeModeChk = document.getElementById("timeModeChk");
+  var dataModeChk = document.getElementById("dataModeChk");
+  var labFields = document.getElementById("labFields");
+  var bottleIdInput = document.getElementById("bottleId");
+  var expertLabelSel = document.getElementById("expertLabel");
+  var manualMinInput = document.getElementById("manualMin");
+  var sessionStats = document.getElementById("sessionStats");
+  var sessionListEl = document.getElementById("sessionList");
+  var exportCsvBtn = document.getElementById("exportCsvBtn");
+  var clearSessionBtn = document.getElementById("clearSessionBtn");
 
   var currentFile = null;
   var analyzing = false;
   var currentSample = null; // stage label when scanned from sample gallery
+  var lastResult = null;    // {ms} เก็บไว้รีเฟรช timing line เมื่อสลับโหมด
 
   // ---------- Mobile nav ----------
   navToggle.addEventListener("click", function () {
@@ -114,6 +144,7 @@
     fileInput.value = "";
     currentFile = null;
     currentSample = null;
+    lastResult = null;
     plantNameInput.value = "";
     previewImg.src = "";
     previewImg.classList.add("hidden");
@@ -127,6 +158,13 @@
 
   // ---------- Analysis flow ----------
   analyzeBtn.addEventListener("click", startAnalysis);
+  var pendingFeatures = null;
+  var pendingUnet = null;
+  var pendingMs = 0;
+
+  function nowF() {
+    return (window.performance && performance.now) ? performance.now() : Date.now();
+  }
 
   function startAnalysis() {
     if (!currentFile || analyzing) return;
@@ -136,14 +174,15 @@
     resultBox.classList.add("hidden");
     progressBox.classList.remove("hidden");
     updateStepTexts();
-    var t0 = Date.now();
+    var t0 = nowF();
     var pixelP = analyzeImagePixels(currentFile);
     var unetP = unetAnalyzeFromFile(currentFile);
     Promise.all([pixelP, unetP]).then(function (r) {
       pendingFeatures = r[0];
       pendingUnet = r[1];
+      pendingMs = Math.round(nowF() - t0);
       // keep the progress animation readable even when analysis is fast
-      var rest = Math.max(0, 2200 - (Date.now() - t0));
+      var rest = Math.max(0, 2200 - pendingMs);
       setTimeout(function () { runSteps(0); }, rest);
     });
   }
@@ -151,16 +190,13 @@
   function updateStepTexts() {
     if (!stepsList.length) return;
     var s0 = stepsList[0];
-    if (unetState === "ready") s0.textContent = "ตรวจจับต้นพืชด้วยโมเดล AI (U-Net)";
-    else if (unetState === "loading") s0.textContent = "กำลังโหลดโมเดล AI (ครั้งแรก ~14 MB)…";
-    else if (unetState === "failed") s0.textContent = "ตรวจจับต้นพืชในภาพ (โหมดวัดสีพื้นฐาน)";
-    else s0.textContent = "ตรวจจับต้นพืชในภาพ";
+    if (unetState === "ready") s0.textContent = "แยกส่วนต้นพืชด้วยโมเดล AI (U-Net)";
+    else if (unetState === "loading") s0.textContent = "กำลังโหลดโมเดล AI (ครั้งแรก ~15 MB)…";
+    else if (unetState === "failed") s0.textContent = "ตรวจคุณภาพภาพ (โหมดวัดสีพื้นฐาน — โมเดลโหลดไม่ได้)";
+    else s0.textContent = "ตรวจคุณภาพภาพ (แสงสะท้อน / ฝ้า / พบต้นพืช)";
   }
 
-  // ---------- Real image measurement (no more random simulation) ----------
-  var pendingFeatures = null;
-  var pendingUnet = null;
-
+  // ---------- Real image measurement (no random simulation) ----------
   function analyzeImagePixels(file) {
     return new Promise(function (resolve) {
       var url = URL.createObjectURL(file);
@@ -187,13 +223,12 @@
 
   // ---------- AI model: U-Net + MobileNetV3-Small (ONNX, onnxruntime-web) ----------
   // โมเดลจริงจาก Hugging Face: Peeradon4778/vitrovision-unet-small (MIT, Val Dice 0.98)
-  // แยก "ส่วนต้นพืช" ออกจากภาพด้วยการเรียนรู้ของเครื่อง จากนั้นวัดขนาด/สีจากพิกเซลจริง
   var UNET_URL = "models/vitrovision-unet-small.onnx";
   var UNET_ORT_BASE = "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.20.1/dist/";
   var UNET_SIZE = 256;
-  var UNET_MIN_COVERAGE = 0.008; // ต่ำกว่านี้ = โมเดลไม่พบต้นพืชในภาพ
-  var UNET_HEIGHT_REF = 0.55;    // ความสูงต้น/ความสูงภาพ ที่ถือว่า "เต็มขนาด"
-  var UNET_MASS_REF = 0.06;      // สัดส่วนพื้นที่ต้น/ภาพ ที่ถือว่า "เต็มขนาด"
+  var UNET_MIN_COVERAGE = 0.008; // ต่ำกว่านี้ = โมเดลไม่พบต้นพืชในภาพ (no ROI → ตรวจเอง)
+  var UNET_HEIGHT_REF = 0.55;    // อ้างอิงสำหรับองค์ประกอบรอง (ไม่ใช่เกณฑ์ตัดสิน)
+  var UNET_MASS_REF = 0.06;
 
   var unetSession = null;
   var unetState = "idle"; // idle | loading | ready | failed
@@ -248,7 +283,6 @@
         input[n + i] = d[i * 4 + 1] / 255;
         input[2 * n + i] = d[i * 4 + 2] / 255;
       }
-      var nowF = (window.performance && performance.now) ? performance.now.bind(performance) : function () { return Date.now(); };
       var t0 = nowF();
       return sess.run({ input: new ort.Tensor("float32", input, [1, 3, UNET_SIZE, UNET_SIZE]) })
         .then(function (res) {
@@ -283,6 +317,26 @@
     var greenPct = greenIn / Math.max(area, 1);
     var yellowPct = yellowIn / Math.max(area, 1);
 
+    // ตรวจคุณภาพภาพในกรอบโซนต้น (bbox): แสงสะท้อนจัด = ขาวโพลน, ฝ้า/ละอองน้ำ = ขาวขุ่น
+    var glarePct = 0, condPct = 0;
+    if (area > 0) {
+      var boxArea = (maxY - minY + 1) * (maxX - minX + 1);
+      var glareN = 0, condN = 0;
+      for (var yy = minY; yy <= maxY; yy++) {
+        for (var xx = minX; xx <= maxX; xx++) {
+          var q = (yy * w + xx) * 4;
+          var rr = rgba[q], gg = rgba[q + 1], bb = rgba[q + 2];
+          var mx = Math.max(rr, gg, bb), mn = Math.min(rr, gg, bb);
+          if (mx === 0) continue;
+          var sat = (mx - mn) / mx;
+          if (mx >= 235 && sat <= 0.15) glareN++;
+          else if (mx >= 184 && mx < 235 && sat <= 0.12) condN++;
+        }
+      }
+      glarePct = glareN / boxArea;
+      condPct = condN / boxArea;
+    }
+
     var maskCanvas = null;
     if (wantOverlay && area > 0) {
       var ov = document.createElement("canvas");
@@ -292,15 +346,15 @@
       var idata = octx.createImageData(w, h);
       var od = idata.data;
       for (var k = 0; k < n; k++) {
-        var q = k * 4;
-        od[q] = rgba[q];
-        od[q + 1] = rgba[q + 1];
-        od[q + 2] = rgba[q + 2];
-        od[q + 3] = 255;
+        var q2 = k * 4;
+        od[q2] = rgba[q2];
+        od[q2 + 1] = rgba[q2 + 1];
+        od[q2 + 2] = rgba[q2 + 2];
+        od[q2 + 3] = 255;
         if (mask[k]) {
-          od[q] = Math.round(0.5 * rgba[q] + 0.5 * 60);
-          od[q + 1] = Math.round(0.5 * rgba[q + 1] + 0.5 * 210);
-          od[q + 2] = Math.round(0.5 * rgba[q + 2] + 0.5 * 80);
+          od[q2] = Math.round(0.5 * rgba[q2] + 0.5 * 60);
+          od[q2 + 1] = Math.round(0.5 * rgba[q2 + 1] + 0.5 * 210);
+          od[q2 + 2] = Math.round(0.5 * rgba[q2 + 2] + 0.5 * 80);
         }
       }
       octx.putImageData(idata, 0, 0);
@@ -316,18 +370,18 @@
       compact: compact,
       greenPct: greenPct,
       yellowPct: yellowPct,
+      glarePct: glarePct,
+      condPct: condPct,
       maskCanvas: maskCanvas,
       ms: ms
     };
   }
 
+  // ---------- ค่าองค์ประกอบรอง 4 มิติ (ประกอบผล ไม่ใช่ตัวตัดสิน) ----------
   function modelCore(u, f) {
-    // ขนาดต้นจากพื้นที่ (model mask) + ความสูงเทียบภาพ
     var sizeScore = Math.min(1, u.height / UNET_HEIGHT_REF);
     var massScore = Math.min(1, u.coverage / UNET_MASS_REF);
     var canopy = 100 * (0.4 * sizeScore + 0.6 * massScore);
-    // ความน่าเชื่อถือว่า "ก้อนที่ตรวจได้" เป็นใบพืชจริง: สัดส่วนสีเขียว vs สีอื่นในก้อนนั้น
-    // (ภาพเมล็ดพริกแห้ง: โมเดลจับเป็นก้อนได้ แต่สีครีม/เหลืองเกือบ 100% → pure ต่ำ → คะแนนถูกกด)
     var colored = u.greenPct + u.yellowPct;
     var organic = colored > 0 ? u.greenPct / (colored + 0.05) : 0;
     var purity = 0.22 + 0.78 * organic;
@@ -338,10 +392,7 @@
     if (u.coverage < UNET_MIN_COVERAGE) {
       return {
         values: { leaf: 8, stem: 10, moisture: Math.min(moisture, 35), roots: 8 },
-        measured: modelMeasured(u, f),
-        noPlant: true,
-        note: null,
-        source: "ai"
+        noPlant: true, note: null, source: "ai"
       };
     }
     var note = null;
@@ -355,25 +406,8 @@
         moisture: moisture,
         roots: clampNum(14 + canopy * purity * 0.72, 8, 95)
       },
-      measured: modelMeasured(u, f),
-      noPlant: false,
-      note: note,
-      source: "ai"
+      noPlant: false, note: note, source: "ai"
     };
-  }
-
-  function modelMeasured(u, f) {
-    var out = [
-      { label: "ต้นพืช (AI แยกส่วน)", text: (u.coverage * 100).toFixed(1) + "% ของภาพ" },
-      { label: "ความสูงเทียบภาพ", text: (u.height * 100).toFixed(0) + "%" },
-      { label: "สีเขียวในต้น", text: (u.greenPct * 100).toFixed(0) + "%" },
-      { label: "ใบเหลืองในต้น", text: (u.yellowPct * 100).toFixed(0) + "%" }
-    ];
-    if (f) {
-      out.push({ label: "ความมืดของดิน", text: f.soilDark >= 0 ? (f.soilDark * 100).toFixed(0) + "%" : "ไม่พบดิน" });
-      out.push({ label: "ความสว่างภาพ", text: (f.bright * 100).toFixed(0) + "%" });
-    }
-    return out;
   }
 
   function computeFeatures(d, w, h) {
@@ -381,21 +415,48 @@
     var n = d.length / 4;
     w = w || 1; h = h || 1;
     var x0 = w * 0.25, x1 = w * 0.75, y0 = h * 0.25, y1 = h * 0.75;
+    var gx0 = w, gx1 = -1, gy0 = h, gy1 = -1; // bbox ของพืช (เขียวหรือเหลือง)
     for (var i = 0; i < d.length; i += 4) {
       var p = i / 4, x = p % w, y = (p - x) / w;
       var r = d[i] / 255, g = d[i + 1] / 255, b = d[i + 2] / 255;
       brightSum += (r + g + b) / 3;
       var exg = 2 * g - r - b; // Excess Green index
-      var centered = x >= x0 && x < x1 && y >= y0 && y < y1;
       if (g > r + 0.03 && g > b + 0.03 && exg > 0.08) {
         green++;
-        if (centered) centerGreen++;
+        if (x < gx0) gx0 = x;
+        if (x > gx1) gx1 = x;
+        if (y < gy0) gy0 = y;
+        if (y > gy1) gy1 = y;
+        if (x >= x0 && x < x1 && y >= y0 && y < y1) centerGreen++;
         continue;
       }
-      if (r > 0.4 && g > 0.35 && b < 0.45 && r >= g && (r - b) > 0.12) { yellow++; continue; }
+      if (r > 0.4 && g > 0.35 && b < 0.45 && r >= g && (r - b) > 0.12) {
+        yellow++;
+        if (x < gx0) gx0 = x;
+        if (x > gx1) gx1 = x;
+        if (y < gy0) gy0 = y;
+        if (y > gy1) gy1 = y;
+        continue;
+      }
       if (r > 0.2 && r < 0.7 && g > 0.12 && g < r && b < g && (r - b) > 0.06) {
         soilN++;
         soilSum += (r + g + b) / 3;
+      }
+    }
+    var roiH = gx1 >= 0 ? (gy1 - gy0 + 1) / h : 0;
+    var box = gx1 >= 0 ? (gy1 - gy0 + 1) * (gx1 - gx0 + 1) : 0;
+    var glareN = 0, condN = 0;
+    if (box > 0) {
+      for (var yy = gy0; yy <= gy1; yy++) {
+        for (var xx = gx0; xx <= gx1; xx++) {
+          var q = (yy * w + xx) * 4;
+          var rr = d[q], gg = d[q + 1], bb = d[q + 2];
+          var mx = Math.max(rr, gg, bb), mn = Math.min(rr, gg, bb);
+          if (mx === 0) continue;
+          var sat = (mx - mn) / mx;
+          if (mx >= 235 && sat <= 0.15) glareN++;
+          else if (mx >= 184 && mx < 235 && sat <= 0.12) condN++;
+        }
       }
     }
     return {
@@ -403,41 +464,30 @@
       centerGreen: centerGreen / (n * 0.25),
       yellow: yellow / n,
       soilDark: soilN > 0 ? soilSum / soilN : -1,
-      bright: brightSum / n
+      bright: brightSum / n,
+      roiH: roiH,
+      glare: box > 0 ? glareN / box : 0,
+      cond: box > 0 ? condN / box : 0
     };
   }
 
   function clampNum(v, a, b) { return Math.max(a, Math.min(b, Math.round(v))); }
-
-  function metricsFromFeatures(f, u) {
-    if (u) return modelCore(u, f);
-    if (!f) { // fallback if pixels unreadable: seeded value so it still works
-      var seed = hashSeed(currentFile.name + "|" + currentFile.size + "|" + currentFile.lastModified);
-      var rand = mulberry32(seed);
-      var fv = {};
-      METRICS.forEach(function (m) { fv[m.key] = 42 + Math.floor(rand() * 57); });
-      return { values: fv, measured: null, noPlant: false, source: "seed" };
-    }
-    return pixelCore(f);
-  }
+  function pctStr(x) { return (Math.round((x || 0) * 1000) / 10).toFixed(1) + "%"; }
 
   function pixelCore(f) {
     // Center-weighted green: the plant is usually centered, edges are often background
     var effGreen = 0.65 * f.centerGreen + 0.35 * f.green;
-    // Detection gate: almost no leaf-green = seeds only / no plant in frame
     var noPlant = (f.green < 0.015 && f.centerGreen < 0.02) ||
                   (f.bright > 0.82 && f.green < 0.05 && f.soilDark < 0);
     var coverage = 100 * (1 - Math.exp(-effGreen * 8)); // saturating canopy curve
-    var unhealthy = f.yellow / (f.green + f.yellow + 0.005); // sick share of vegetation
+    var unhealthy = f.yellow / (f.green + f.yellow + 0.005);
     var moisture = f.soilDark >= 0
       ? clampNum(100 - Math.abs(f.soilDark - 0.30) * 260, 5, 97)
       : clampNum(28 + coverage * 0.4, 5, 97);
     if (noPlant) {
       return {
         values: { leaf: 8, stem: 10, moisture: Math.min(moisture, 35), roots: 8 },
-        measured: buildMeasured(f),
-        noPlant: true,
-        source: "pixel"
+        noPlant: true, note: null, source: "pixel"
       };
     }
     return {
@@ -447,19 +497,139 @@
         moisture: moisture,
         roots: clampNum(14 + coverage * 0.72, 8, 95)
       },
-      measured: buildMeasured(f),
-      noPlant: false,
-      source: "pixel"
+      noPlant: false, note: null, source: "pixel"
     };
   }
 
-  function buildMeasured(f) {
+  function metricsFromFeatures(f, u) {
+    if (u) return modelCore(u, f);
+    if (!f) { // fallback if pixels unreadable: seeded value so it still works
+      var seed = hashSeed(currentFile.name + "|" + currentFile.size + "|" + currentFile.lastModified);
+      var rand = mulberry32(seed);
+      var fv = {};
+      METRICS.forEach(function (m) { fv[m.key] = 42 + Math.floor(rand() * 57); });
+      return { values: fv, noPlant: false, source: "seed", note: null };
+    }
+    return pixelCore(f);
+  }
+
+  // ---------- ค่าที่ใช้ตัดสิน (height_proxy + คุณภาพภาพ) ----------
+  function collectMeasure(u, f) {
+    if (u) {
+      return {
+        ai: true,
+        height: u.height || 0,
+        coverage: u.coverage || 0,
+        green: u.greenPct || 0,
+        yellow: u.yellowPct || 0,
+        glare: u.glarePct || 0,
+        cond: u.condPct || 0
+      };
+    }
+    if (f) {
+      var veg = f.green + f.yellow;
+      return {
+        ai: false,
+        height: f.roiH || 0,
+        coverage: veg,
+        green: veg > 0 ? f.green / veg : 0,
+        yellow: veg > 0 ? f.yellow / veg : 0,
+        glare: f.glare || 0,
+        cond: f.cond || 0
+      };
+    }
+    return null;
+  }
+
+  function confidenceOf(m) {
+    if (!m) return null;
+    var base = m.ai ? 0.5 + 0.5 * Math.min(1, m.coverage / 0.04) : 0.65;
+    return Math.max(5, Math.min(99, Math.round(100 * base * (1 - Math.min(1, m.glare)))));
+  }
+
+  var GATE_TIPS = {
+    noRoi: [
+      "วางขวดให้เต็มเฟรม ถ่ายแนวดิ่งจากด้านหน้า ให้เห็นต้นในขวดชัด ๆ",
+      "ใช้แสงธรรมชาติอ่อน ๆ หลีกเลี่ยงการย้อนแสง และถ่ายให้ภาพไม่เบลอ"
+    ],
+    glare: [
+      "ถ่ายจากมุมอื่นที่ไม่มีแสงสะท้อนบนผิวขวด/ฝา",
+      "ปิดแฟลชและหรี่ไฟด้านบนขวดชั่วคราวเมื่อถ่าย",
+      "ใช้ฉากหลังทึบสีเข้มด้านหลังขวด เพื่อลดแสงสะท้อน"
+    ],
+    cond: [
+      "เช็ดฝา/ผิวนอกขวดให้แห้งก่อนถ่าย",
+      "รอ 1–2 นาทีให้ฝ้าจางแล้วถ่ายใหม่",
+      "ถ้าเป็นฝ้าด้านในขวด (จากความชื้นในขวด) ให้รอฝ้าจางหรือเปลี่ยนขวดที่มองเห็นต้นชัดกว่า"
+    ],
+    yellow: [
+      "ถ้าเป็นเมล็ด/วัสดุเพาะ ให้รอต้นงอกเป็นสีเขียวแล้วสแกนใหม่",
+      "ถ้าเป็นต้นในขวดที่ใบเหลือง ให้ตรวจอาหารเพาะเลี้ยง/แสง แล้วปรึกษาครูพี่เลี้ยงก่อนย้ายออก",
+      "บันทึกภาพไว้เทียบกับครั้งถัดไปในโหมดวิจัย เพื่อดูว่าใบกลับมาเขียวหรือไม่"
+    ]
+  };
+
+  function verdictInfo(m) {
+    if (!m) {
+      return {
+        cls: "manual", text: "ตรวจเอง", gate: "noRoi", conf: null, score: null, m: null,
+        desc: "อ่านค่าจากภาพไม่ได้ — ลองถ่ายใหม่เป็นไฟล์ JPG/PNG ปกติ แล้วสแกนอีกครั้ง",
+        tips: GATE_TIPS.noRoi
+      };
+    }
+    if (m.coverage < UNET_MIN_COVERAGE) {
+      return {
+        cls: "manual", text: "ตรวจเอง", gate: "noRoi", conf: null, score: null, m: m,
+        desc: "ไม่พบส่วนของต้นพืชในภาพ (พื้นที่ต้นพืช " + pctStr(m.coverage) + " ต่ำกว่าเกณฑ์ " + pctStr(UNET_MIN_COVERAGE) + ") — อาจถ่ายไม่ติดต้น เบลอ หรือต้นเล็กเกินไป",
+        tips: GATE_TIPS.noRoi
+      };
+    }
+    var conf = confidenceOf(m);
+    if (m.green < 0.15) {
+      return {
+        cls: "manual", text: "ตรวจเอง", gate: "yellow", conf: conf, score: null, m: m,
+        desc: "สิ่งที่ตรวจพบเป็นสีเหลือง/ครีมเป็นหลัก (สีเขียว " + pctStr(m.green) + ") — อาจเป็นเมล็ดหรือต้นที่ใบเหลือง ระบบจึงไม่ยืนยันความพร้อมอัตโนมัติ",
+        tips: GATE_TIPS.yellow
+      };
+    }
+    if (m.glare * 100 > GLARE_MAX) {
+      return {
+        cls: "manual", text: "ตรวจเอง", gate: "glare", conf: conf, score: null, m: m,
+        desc: "แสงสะท้อนจ้าบังผิวขวด (" + pctStr(m.glare) + " ของโซนต้น — เกินเกณฑ์ " + GLARE_MAX + "%) ระบบจึงไม่การันตีผลอัตโนมัติ ควรให้คนตรวจหรือถ่ายใหม่",
+        tips: GATE_TIPS.glare
+      };
+    }
+    if (m.cond * 100 > COND_MAX) {
+      return {
+        cls: "manual", text: "ตรวจเอง", gate: "cond", conf: conf, score: null, m: m,
+        desc: "ฝ้า/ละอองน้ำบนกระจกบังมุมมอง (" + pctStr(m.cond) + " ของโซนต้น — เกินเกณฑ์ " + COND_MAX + "%) ระบบจึงไม่การันตีผลอัตโนมัติ",
+        tips: GATE_TIPS.cond
+      };
+    }
+    var score = Math.max(2, Math.min(100, Math.round(100 * m.height / READY_HEIGHT)));
+    if (m.height >= READY_HEIGHT) {
+      return {
+        cls: "ok", text: "พร้อมย้ายออกจากขวด", gate: null, conf: conf, score: score, m: m,
+        desc: "ความสูงต้น " + pctStr(m.height) + " ถึงเกณฑ์ ≥ " + pctStr(READY_HEIGHT) + " ของภาพ — พร้อมย้ายออกปลูกนอกขวด ย้ายช่วงเช้า/เย็น แล้วปรับสภาพ (acclimatize) 2–3 วันแรก"
+      };
+    }
+    var d = READY_HEIGHT - m.height;
+    var days = d >= 0.10 ? "10–14" : d >= 0.05 ? "5–10" : "3–5";
+    return {
+      cls: "warn", text: "ยังไม่พร้อม — รออีก ~" + days + " วัน", gate: null, conf: conf, score: score, m: m, days: days,
+      desc: "ต้นสูง " + pctStr(m.height) + " ยังไม่ถึงเกณฑ์ ≥ " + pctStr(READY_HEIGHT) + " ของภาพ (ขาดอีก " + pctStr(d) + ") — ประเมินแนวโน้ม: อีกประมาณ " + days + " วัน ควรสแกนซ้ำทุก 3–5 วัน"
+    };
+  }
+
+  function buildMeasureList(m) {
+    if (!m) return [];
     return [
-      { label: "พื้นที่สีเขียว", text: (f.green * 100).toFixed(1) + "%" },
-      { label: "สีเขียวกลางภาพ", text: (f.centerGreen * 100).toFixed(1) + "%" },
-      { label: "ใบเหลือง/จุด", text: (f.yellow * 100).toFixed(1) + "%" },
-      { label: "ความมืดของดิน", text: f.soilDark >= 0 ? (f.soilDark * 100).toFixed(0) + "%" : "ไม่พบดิน" },
-      { label: "ความสว่างภาพ", text: (f.bright * 100).toFixed(0) + "%" }
+      { label: "ความสูงต้น (height_proxy)", text: pctStr(m.height) },
+      { label: "พื้นที่ต้นพืชในภาพ", text: pctStr(m.coverage) },
+      { label: "สีเขียวในต้น", text: pctStr(m.green) },
+      { label: "ใบเหลืองในต้น", text: pctStr(m.yellow) },
+      { label: "แสงสะท้อน (glare)", text: pctStr(m.glare) },
+      { label: "ฝ้า/ละอองน้ำ", text: pctStr(m.cond) }
     ];
   }
 
@@ -482,38 +652,13 @@
 
   // ---------- Dataset (plants-dataset.json, replaceable) ----------
   var DATASET = null;
-  var FALLBACK_TIPS = {
-    leafLow: "ใบซีดหรือไม่สมบูรณ์ — เพิ่มแสงรำไร 4–6 ชม./วัน และพ่นปุ๋ยทางใบสูตรเสมอสัปดาห์ละครั้ง",
-    leafOk: "ใบสภาพดี — รักษาระดับแสงปัจจุบัน หลีกเลี่ยงแดดจัดช่วงเที่ยง",
-    stemLow: "ลำต้นยังอ่อน — ลดการรดน้ำ งดปุ๋ยไนโตรเจนสูง และให้ลมโกรกเพื่อสร้างความแข็งแรง",
-    dry: "ดินแห้งเกินไป — รดน้ำเช้า–เย็นแบบพอชุ่ม หลีกเลี่ยงน้ำขังโคนต้น",
-    moistureOk: "ความชื้นพอดี — รักษารอบการรดน้ำแบบนี้ต่อไป",
-    wet: "ดินแฉะเกินไป — เว้นระยะรดน้ำ 1 วัน และปรับวัสดุปลูกให้ระบายน้ำดีขึ้น",
-    rootsLow: "รากยังเดินไม่เต็ม — อย่าเพิ่งย้าย อนุบาลต่อจนรากแน่นก่อนย้ายปลูก",
-    ready: "ย้ายปลูกช่วงเย็น รองก้นหลุมด้วยปุ๋ยคอก และพรางแสง 2–3 วันแรก"
-  };
-  var FALLBACK_PROFILE = {
-    name: "",
-    readyScore: 80,
-    careScore: 60,
-    ideal: { leaf: [70, 100], stem: [70, 100], moisture: [55, 85], roots: [70, 100] },
-    nurseDays: { care: 5, notReady: 10 },
-    tips: FALLBACK_TIPS
-  };
+  var FALLBACK_PROFILE = { name: "", readyScore: 80, careScore: 60 };
 
   if (window.fetch) {
     fetch("plants-dataset.json")
       .then(function (r) { if (!r.ok) throw new Error("bad status"); return r.json(); })
       .then(function (d) { if (d && d.plants) DATASET = d; })
       .catch(function () { DATASET = null; });
-  }
-
-  function extend(base, over) {
-    var out = {};
-    var k;
-    for (k in base) if (Object.prototype.hasOwnProperty.call(base, k)) out[k] = base[k];
-    if (over) for (k in over) if (Object.prototype.hasOwnProperty.call(over, k)) out[k] = over[k];
-    return out;
   }
 
   // Match typed plant name against dataset (contains-match, Thai-friendly)
@@ -535,26 +680,26 @@
     }
     return {
       name: found ? found.name : "",
-      readyScore: found && found.readyScore != null ? found.readyScore : base.readyScore,
-      careScore: found && found.careScore != null ? found.careScore : base.careScore,
-      ideal: extend(base.ideal, found && found.ideal),
-      nurseDays: extend(base.nurseDays, found && found.nurseDays),
-      tips: extend(base.tips || FALLBACK_TIPS, found && found.tips)
+      readyScore: found && found.readyScore != null ? found.readyScore : (base.readyScore || 80),
+      careScore: found && found.careScore != null ? found.careScore : (base.careScore || 60)
     };
   }
 
   function finishAnalysis() {
     var u = pendingUnet;
-    var res = metricsFromFeatures(pendingFeatures, pendingUnet);
+    var f = pendingFeatures;
+    var ms = pendingMs;
+    var res = metricsFromFeatures(f, u);
+    var m = collectMeasure(u, f);
+    var v = verdictInfo(m);
     pendingFeatures = null;
     pendingUnet = null;
-    var values = res.values;
-    var score = Math.round(
-      METRICS.reduce(function (sum, m) { return sum + values[m.key] * m.weight; }, 0)
-    );
 
-    renderResult(score, values, res.measured, res.noPlant, res.source, res.note, u);
-    saveHistory(score);
+    renderResult(res.values, v, u, ms, res.source, res.note);
+    saveHistory(v);
+    recordSession(v, ms, res.source);
+    lastResult = { ms: ms };
+    updateTimingLine(ms);
 
     analyzing = false;
     analyzeBtn.disabled = false;
@@ -569,60 +714,93 @@
     }
   }
 
-  function statusOf(score, prof) {
-    prof = prof || FALLBACK_PROFILE;
-    if (score >= prof.readyScore) return { cls: "ok", text: "พร้อมลงปลูก", days: 0 };
-    if (score >= prof.careScore) return { cls: "warn", text: "ควรดูแลเพิ่มเติม", days: prof.nurseDays.care };
-    return { cls: "bad", text: "ยังไม่พร้อมลงปลูก", days: prof.nurseDays.notReady };
+  function buildReportText(name, v, ms, source) {
+    var d = new Date();
+    var lines = [];
+    lines.push("รายงาน VitroVision — ตรวจความพร้อมต้นกล้าในขวดเพาะเลี้ยง");
+    lines.push("ตัวอย่าง: " + (name || "(ไม่ระบุชื่อ)"));
+    lines.push("เวลา: " + d.toLocaleString("th-TH", { dateStyle: "medium", timeStyle: "short" }));
+    lines.push("ผล: " + v.text);
+    if (v.conf != null) lines.push("ความเชื่อมั่น: " + v.conf + "%");
+    if (v.m) {
+      lines.push("ความสูงต้น (height_proxy): " + pctStr(v.m.height) + " (เกณฑ์ ≥ " + pctStr(READY_HEIGHT) + ")");
+      lines.push("พื้นที่ต้นพืช / สีเขียว / ใบเหลือง: " + pctStr(v.m.coverage) + " / " + pctStr(v.m.green) + " / " + pctStr(v.m.yellow));
+      lines.push("แสงสะท้อน / ฝ้า: " + pctStr(v.m.glare) + " / " + pctStr(v.m.cond));
+    }
+    if (typeof ms === "number") {
+      lines.push("เวลาวิเคราะห์: " + (ms / 1000).toFixed(1) + " วินาที (" + (source === "ai" ? "AI U-Net" : "วัดสีพื้นฐาน") + ")");
+    }
+    lines.push("โมเดล: U-Net + MobileNetV3-Small (VitroVision, MIT)");
+    return lines.join("\n");
   }
 
-  function renderResult(score, values, measured, noPlant, source, note, u) {
+  function renderResult(values, v, u, ms, source, note) {
     var prof = getProfile();
-    var st = statusOf(score, prof);
     var name = plantNameInput.value.trim();
-    if (prof.name) name = prof.name;
-    if (currentSample) name = (name || "ต้นกล้า") + " (" + currentSample + ")";
+    var bid = bottleIdInput ? bottleIdInput.value.trim() : "";
+    if (bid) name = name ? name + " (" + bid + ")" : bid;
+    if (currentSample) name = (name ? name + " · " : "") + currentSample;
 
-    statusBadge.textContent = st.text;
-    statusBadge.className = "status-badge " + st.cls;
-    resultTitle.textContent = name ? "ผลวิเคราะห์: " + name : "ผลวิเคราะห์ต้นกล้า";
-    resultDesc.textContent =
-      st.cls === "ok"
-        ? "ต้นกล้าแข็งแรงดี สามารถย้ายลงแปลงปลูกได้เลย ควรย้ายช่วงเย็นและรดน้ำตามทันที"
-        : "ต้นกล้ายังต้องการการดูแลอีกประมาณ " + st.days + " วันก่อนย้ายลงแปลง ดูคำแนะนำด้านล่าง";
-    if (noPlant) {
-      resultDesc.textContent = source === "ai"
-        ? "โมเดล AI ไม่พบส่วนของต้นพืชในภาพนี้ — อาจเป็นเมล็ด ภาพเบลอ หรือถ่ายไม่ติดต้น ลองถ่ายใหม่ให้เห็นใบชัด ๆ"
-        : "ภาพนี้แทบไม่มีสีเขียวของใบพืชเลย — อาจเป็นเมล็ดล้วนหรือถ่ายไม่ติดต้น จึงให้คะแนนต่ำไว้ก่อน ลองถ่ายใหม่ให้เห็นใบชัด ๆ";
+    statusBadge.textContent = v.text;
+    statusBadge.className = "status-badge " + (v.cls === "ok" ? "ok" : v.cls === "warn" ? "warn" : "manual");
+    resultTitle.textContent = name ? "ผลวิเคราะห์: " + name : "ผลวิเคราะห์ขวดเพาะเลี้ยง";
+    resultDesc.textContent = v.desc;
+
+    // Gate box (แสดงเมื่อต้องตรวจเอง)
+    if (v.cls === "manual") {
+      gateBox.classList.remove("hidden");
+      gateReason.textContent = "ต้องตรวจเอง — " +
+        (v.gate === "glare" ? "แสงสะท้อนจ้า" : v.gate === "cond" ? "ฝ้า/ละอองน้ำบัง"
+          : v.gate === "yellow" ? "พบสีเหลืองเป็นหลัก" : "ไม่พบต้นพืชในภาพ") +
+        " · วิธีแก้:";
+      gateTips.innerHTML = "";
+      (v.tips || []).forEach(function (t) {
+        var li = document.createElement("li");
+        li.textContent = t;
+        gateTips.appendChild(li);
+      });
+    } else {
+      gateBox.classList.add("hidden");
     }
 
-    // Score ring (animate)
-    ringFg.style.stroke = st.cls === "ok" ? "#2fa14f" : st.cls === "warn" ? "#d97706" : "#dc2626";
-    ringFg.style.strokeDashoffset = RING_C;
-    scoreNum.textContent = "0";
-    requestAnimationFrame(function () {
-      ringFg.style.strokeDashoffset = (RING_C * (1 - score / 100)).toFixed(1);
-    });
-    animateNumber(scoreNum, score, 1100);
+    // Score ring (เฉพาะเมื่อมีคะแนน = ผ่านคุณภาพภาพแล้ว)
+    var showScore = v.score != null;
+    scoreWrap.classList.toggle("hidden", !showScore);
+    scoreCaption.classList.toggle("hidden", !showScore);
+    if (showScore) {
+      scoreCaption.textContent = "ความพร้อมเทียบเกณฑ์ความสูง (สูง ≥ " + pctStr(READY_HEIGHT) + " ของภาพ)";
+      ringFg.style.stroke = v.cls === "ok" ? "#2fa14f" : "#d97706";
+      ringFg.style.strokeDashoffset = RING_C;
+      scoreNum.textContent = "0";
+      requestAnimationFrame(function () {
+        ringFg.style.strokeDashoffset = (RING_C * (1 - v.score / 100)).toFixed(1);
+      });
+      animateNumber(scoreNum, v.score, 1100);
+    }
+    confLine.classList.toggle("hidden", v.conf == null);
+    if (v.conf != null) {
+      confLine.textContent = "ความเชื่อมั่นของผลวิเคราะห์: " + v.conf + "% (คำนวณจากพื้นที่ต้นพืชและแสงสะท้อน)";
+    }
 
-    // Metrics (bar colors follow dataset thresholds)
+    // Metrics (องค์ประกอบรอง — สีตามเกณฑ์ของพืชที่เลือก)
     metricsList.innerHTML = "";
     METRICS.forEach(function (m) {
-      var v = values[m.key];
+      var val = values[m.key];
       var li = document.createElement("li");
       li.innerHTML =
-        '<div class="metric-head"><span>' + m.label + '</span><span>' + v + "/100</span></div>" +
+        '<div class="metric-head"><span>' + m.label + '</span><span>' + val + "/100</span></div>" +
         '<div class="metric-track"><span class="metric-fill"></span></div>';
       metricsList.appendChild(li);
       requestAnimationFrame(function () {
-        li.querySelector(".metric-fill").style.width = v + "%";
+        li.querySelector(".metric-fill").style.width = val + "%";
         li.querySelector(".metric-fill").style.background =
-          v >= prof.readyScore ? "#2fa14f" : v >= prof.careScore ? "#d97706" : "#dc2626";
+          val >= prof.readyScore ? "#2fa14f" : val >= prof.careScore ? "#d97706" : "#dc2626";
       });
     });
 
-    // Measured-from-pixels evidence
-    if (measured && measured.length) {
+    // ค่าที่วัดได้จากภาพจริง
+    var measured = buildMeasureList(v.m);
+    if (measured.length) {
       measuredTitle.classList.remove("hidden");
       measuredList.classList.remove("hidden");
       measuredList.innerHTML = "";
@@ -639,7 +817,7 @@
       measuredList.classList.add("hidden");
     }
 
-    // AI segmentation overlay (แสดงเฉพาะเมื่อโมเดล AI ทำงานจริง)
+    // AI segmentation overlay
     if (u && u.maskCanvas) {
       try {
         aiShotImg.src = u.maskCanvas.toDataURL("image/png");
@@ -653,17 +831,29 @@
     }
 
     methodNote.textContent = source === "ai"
-      ? "วิธีวิเคราะห์: โมเดล AI (U-Net + MobileNetV3-Small, Val Dice 0.98) แยกส่วนต้นพืชออกจากภาพ แล้ววัดขนาดต้น สีใบ (Excess Green) และความมืดของดินจากพิกเซลจริง"
-      : "วิธีวิเคราะห์: วัดสีพื้นฐาน (Excess Green) จากพิกเซลภาพจริง — ครั้งนี้โหลดโมเดล AI ไม่ได้ (ครั้งแรกต้องต่ออินเทอร์เน็ต)";
+      ? "วิธีวิเคราะห์: โมเดล AI U-Net + MobileNetV3-Small (Val Dice 0.98) แยกส่วนต้นพืชออกจากภาพ → วัดความสูงต้นเทียบภาพ (height_proxy) พร้อมตรวจแสงสะท้อน/ฝ้า/สีจากพิกเซลจริง — เกณฑ์ความพร้อม: ความสูง ≥ 20% ของภาพ"
+      : "วิธีวิเคราะห์: วัดสีพื้นฐาน (Excess Green) จากพิกเซลภาพจริง — ครั้งนี้โหลดโมเดล AI ไม่ได้ (ครั้งแรกต้องต่ออินเทอร์เน็ต) ผลจะแม่นยำน้อยกว่าโหมด AI";
 
-    // Recommendations (dataset-driven)
+    // รายงานรายขวด
+    var report = buildReportText(name, v, ms, source);
+    reportText.textContent = report;
+    reportCard.classList.remove("hidden");
+
+    // คำแนะนำ
     recsList.innerHTML = "";
-    var recItems;
-    if (note) {
-      recItems = [note, "ถ่ายภาพใหม่ให้เห็นต้นพืชสีเขียวชัด ๆ วางไว้กลางภาพ ใช้แสงธรรมชาติ"];
+    var recItems = [];
+    if (note) recItems.push(note);
+    if (v.cls === "ok") {
+      recItems.push("ย้ายออกจากขวดช่วงเช้าหรือเย็น แล้วปรับสภาพ (acclimatize) ในที่ร่ม/พรางแสง 50% 2–3 วันแรก");
+      recItems.push("ก่อนย้าย ตรวจรากให้แน่นและไม่มีรอยเน่า/เชื้อรา แล้วบันทึกวันย้ายไว้ในรายงานรายขวด");
+      recItems.push("หลังย้ายค่อย ๆ เพิ่มแสงเต็มที่ และเฝ้าดูใบร่วง 2–3 วันแรก");
+    } else if (v.cls === "warn") {
+      recItems.push("ต้นยังเล็กกว่าเกณฑ์ — รออีกประมาณ " + (v.days || "3–5") + " วัน แล้วสแกนซ้ำ (ตรวจทุก 3–5 วัน)");
+      recItems.push("ระหว่างรอ: รักษาแสง ~16 ชม./วัน และตรวจอาหารเพาะเลี้ยงไม่ให้ขุ่น/แห้ง");
+      recItems.push("ขวดที่ต้นเหลืองผิดปกติหรือฝักช้ำ ให้แยกออกจากชุดที่กำลังจะย้าย");
     } else {
-      recItems = buildRecs(values, st, prof);
-      if (noPlant) recItems.unshift("ถ่ายภาพใหม่ให้เห็นใบและลำต้นชัด ๆ วางต้นกล้าไว้กลางภาพ ใช้แสงธรรมชาติ");
+      (v.tips || []).forEach(function (t) { recItems.push(t); });
+      recItems.push("ถ้าถ่ายใหม่แล้วยังขึ้น \"ตรวจเอง\" ให้ผู้เชี่ยวชาญตรวจด้วยตา และบันทึกผลในโหมดวิจัย (CSV)");
     }
     recItems.forEach(function (text) {
       var li = document.createElement("li");
@@ -675,29 +865,13 @@
     if (threeOK && window.VitroVision3D) {
       setView("3d");
       try {
-        window.VitroVision3D.render(score, values);
+        window.VitroVision3D.render(v.score != null ? v.score : 40, values);
       } catch (e) {
         setView("2d");
       }
     } else {
       setView("2d");
     }
-  }
-
-  function buildRecs(v, st, prof) {
-    prof = prof || FALLBACK_PROFILE;
-    var tips = prof.tips;
-    var ideal = prof.ideal;
-    var recs = [];
-    if (v.leaf < ideal.leaf[0]) recs.push(tips.leafLow);
-    else recs.push(tips.leafOk);
-    if (v.stem < ideal.stem[0]) recs.push(tips.stemLow);
-    if (v.moisture < ideal.moisture[0]) recs.push(tips.dry);
-    else if (v.moisture > ideal.moisture[1]) recs.push(tips.wet);
-    else recs.push(tips.moistureOk);
-    if (v.roots < ideal.roots[0]) recs.push(tips.rootsLow);
-    if (st.cls === "ok") recs.push(tips.ready);
-    return recs;
   }
 
   function animateNumber(el, target, dur) {
@@ -952,17 +1126,18 @@
       return [];
     }
   }
-  function saveHistory(score) {
-    var st = statusOf(score, getProfile());
-    var hname = plantNameInput.value.trim() || "ต้นกล้าไม่ระบุชื่อ";
-    if (currentSample) hname += " (" + currentSample + ")";
+  function saveHistory(v) {
+    var hname = plantNameInput.value.trim() || "ขวดไม่ระบุชื่อ";
+    var bid = bottleIdInput ? bottleIdInput.value.trim() : "";
+    if (bid) hname += " (" + bid + ")";
+    if (currentSample) hname += " · " + currentSample;
     var items = loadHistory();
     items.unshift({
       t: Date.now(),
       name: hname,
-      score: score,
-      cls: st.cls,
-      status: st.text
+      score: v.score != null ? v.score : null,
+      cls: v.cls,
+      status: v.text
     });
     try {
       localStorage.setItem(HISTORY_KEY, JSON.stringify(items.slice(0, HISTORY_MAX)));
@@ -977,7 +1152,7 @@
       var li = document.createElement("li");
       var date = new Date(it.t).toLocaleString("th-TH", { dateStyle: "medium", timeStyle: "short" });
       li.innerHTML =
-        '<span class="hist-score ' + it.cls + '">' + it.score + '</span>' +
+        '<span class="hist-score ' + it.cls + '">' + (it.score == null ? "–" : it.score) + '</span>' +
         '<div class="hist-info"><strong></strong><span>' + date + '</span></div>' +
         '<span class="hist-status ' + it.cls + '">' + it.status + '</span>';
       li.querySelector("strong").textContent = it.name;
@@ -989,6 +1164,180 @@
     renderHistory();
   });
   renderHistory();
+
+  // ---------- โหมดวิจัย: จับเวลา + เก็บข้อมูล 100 ขวด ----------
+  function loadSession() {
+    try {
+      return JSON.parse(localStorage.getItem(SESSION_KEY)) || [];
+    } catch (e) {
+      return [];
+    }
+  }
+  function saveSession(items) {
+    try {
+      localStorage.setItem(SESSION_KEY, JSON.stringify(items.slice(0, SESSION_MAX)));
+    } catch (e) { /* ignore */ }
+  }
+  function pctNum(x) { return Math.round((x || 0) * 1000) / 10; }
+
+  function recordSession(v, ms, source) {
+    if (!dataModeChk || !dataModeChk.checked) return;
+    var items = loadSession();
+    items.unshift({
+      t: Date.now(),
+      bottle: bottleIdInput ? bottleIdInput.value.trim() : "",
+      expert: expertLabelSel ? expertLabelSel.value : "",
+      verdict: v.text,
+      cls: v.cls,
+      conf: v.conf != null ? v.conf : "",
+      height: v.m ? pctNum(v.m.height) : "",
+      coverage: v.m ? pctNum(v.m.coverage) : "",
+      green: v.m ? pctNum(v.m.green) : "",
+      yellow: v.m ? pctNum(v.m.yellow) : "",
+      glare: v.m ? pctNum(v.m.glare) : "",
+      cond: v.m ? pctNum(v.m.cond) : "",
+      score: v.score != null ? v.score : "",
+      ms: ms,
+      source: source
+    });
+    saveSession(items);
+    renderSession();
+  }
+
+  function renderSession() {
+    if (!sessionStats) return;
+    var items = loadSession();
+    var n = items.length;
+    if (!n) {
+      sessionStats.textContent = "ยังไม่มีข้อมูลในเซสชันนี้ — สแกนขวดแรกเพื่อเริ่มเก็บข้อมูล";
+    } else {
+      var mean = 0;
+      for (var i = 0; i < n; i++) mean += items[i].ms || 0;
+      mean = mean / n;
+      var txt = "เก็บแล้ว " + n + " ขวด • เวลา AI เฉลี่ย " + (mean / 1000).toFixed(1) + " วิ/ขวด";
+      var mm = manualMinInput ? parseFloat(manualMinInput.value) : NaN;
+      if (mm > 0) {
+        var red = Math.max(0, Math.round((1 - (mean / 60000) / mm) * 100));
+        txt += " • เร็วกว่าตรวจด้วยตา (" + mm + " นาที/ขวด) ≈ " + red + "%";
+      }
+      sessionStats.textContent = txt;
+    }
+    sessionListEl.innerHTML = "";
+    items.slice(0, 8).forEach(function (it) {
+      var li = document.createElement("li");
+      var t = new Date(it.t).toLocaleString("th-TH", { dateStyle: "short", timeStyle: "short" });
+      li.textContent = t + " • " + (it.bottle || "(ไม่ระบุรหัส)") + " • " + it.verdict +
+        (it.height !== "" && it.height != null ? " • สูง " + it.height + "%" : "") +
+        " • " + ((it.ms || 0) / 1000).toFixed(1) + " วิ";
+      sessionListEl.appendChild(li);
+    });
+  }
+
+  function updateTimingLine(ms) {
+    if (!timingLine) return;
+    var show = timeModeChk && timeModeChk.checked && typeof ms === "number";
+    if (!show) {
+      timingLine.classList.add("hidden");
+      return;
+    }
+    var txt = "เวลาวิเคราะห์ขวดนี้: " + (ms / 1000).toFixed(1) + " วินาที (AI ในเบราว์เซอร์)";
+    var mm = manualMinInput ? parseFloat(manualMinInput.value) : NaN;
+    if (mm > 0) {
+      txt += " — ตรวจด้วยตา ~" + mm + " นาที/ขวด → เร็วขึ้น ≈ " + Math.max(0, Math.round((1 - (ms / 60000) / mm) * 100)) + "%";
+    }
+    timingLine.textContent = txt;
+    timingLine.classList.remove("hidden");
+  }
+
+  function csvCell(v) {
+    v = String(v == null ? "" : v);
+    return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v;
+  }
+  function pad2(n) { return (n < 10 ? "0" : "") + n; }
+  function exportCsv() {
+    var items = loadSession();
+    if (!items.length) {
+      alert("ยังไม่มีข้อมูล — เปิดโหมดเก็บข้อมูล สแกนก่อน แล้วค่อยดาวน์โหลด");
+      return;
+    }
+    var head = ["timestamp", "bottle_id", "expert_label", "ai_verdict", "ai_class", "confidence_pct",
+                "height_pct", "coverage_pct", "green_pct", "yellow_pct", "glare_pct",
+                "condensation_pct", "ai_time_ms", "source"];
+    var rows = items.map(function (it) {
+      return [new Date(it.t).toISOString(), it.bottle, it.expert, it.verdict, it.cls, it.conf,
+              it.height, it.coverage, it.green, it.yellow, it.glare, it.cond, it.ms, it.source]
+        .map(csvCell).join(",");
+    });
+    var csv = "\uFEFF" + head.join(",") + "\r\n" + rows.join("\r\n");
+    var blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    var a = document.createElement("a");
+    var d = new Date();
+    a.href = URL.createObjectURL(blob);
+    a.download = "vitrovision-session-" + d.getFullYear() + pad2(d.getMonth() + 1) + pad2(d.getDate()) +
+      "-" + pad2(d.getHours()) + pad2(d.getMinutes()) + ".csv";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(function () { URL.revokeObjectURL(a.href); }, 5000);
+  }
+
+  if (dataModeChk) {
+    dataModeChk.addEventListener("change", function () {
+      labFields.classList.toggle("hidden", !dataModeChk.checked);
+      renderSession();
+    });
+  }
+  if (timeModeChk) {
+    timeModeChk.addEventListener("change", function () {
+      if (lastResult) updateTimingLine(lastResult.ms);
+      else updateTimingLine(undefined);
+    });
+  }
+  if (manualMinInput) {
+    manualMinInput.addEventListener("input", function () {
+      renderSession();
+      if (lastResult) updateTimingLine(lastResult.ms);
+    });
+  }
+  if (exportCsvBtn) exportCsvBtn.addEventListener("click", exportCsv);
+  if (clearSessionBtn) {
+    clearSessionBtn.addEventListener("click", function () {
+      if (confirm("ล้างข้อมูลเซสชันวิจัยทั้งหมด?")) {
+        saveSession([]);
+        renderSession();
+      }
+    });
+  }
+  renderSession();
+
+  // คัดลอกรายงาน
+  copyReportBtn.addEventListener("click", function () {
+    var text = reportText.textContent || "";
+    function done() {
+      copyReportBtn.textContent = "คัดลอกแล้ว ✓";
+      setTimeout(function () { copyReportBtn.textContent = "คัดลอก"; }, 1600);
+    }
+    function fallback() {
+      try {
+        var ta = document.createElement("textarea");
+        ta.value = text;
+        ta.style.position = "fixed";
+        ta.style.opacity = "0";
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand("copy");
+        ta.remove();
+        done();
+      } catch (e) {
+        alert("คัดลอกอัตโนมัติไม่ได้ — กรุณาเลือกข้อความในรายงานแล้วคัดลอกเอง");
+      }
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done, fallback);
+    } else {
+      fallback();
+    }
+  });
 
   // ---------- Utils: seeded random ----------
   function hashSeed(str) {

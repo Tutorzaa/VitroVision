@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>VitroVision — วิเคราะห์ความพร้อมพืชก่อนลงปลูก</title>
-  <meta name="description" content="ถ่ายรูปต้นกล้า แล้วให้ VitroVision ประเมินว่าพืชของคุณพร้อมลงปลูกหรือยัง" />
+  <title>VitroVision — ตรวจความพร้อมต้นกล้าในขวดเพาะเลี้ยงก่อนย้ายออก</title>
+  <meta name="description" content="ถ่ายภาพขวดเพาะเลี้ยงเนื้อเยื่อ แล้วให้ VitroVision ตรวจคุณภาพภาพและวัดความสูงต้นด้วย AI สรุปความพร้อมย้ายออกจากขวด 3 ระดับ พร้อมรายงานรายขวด" />
   <link rel="stylesheet" href="style.css" />
   <script type="importmap">
     { "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js" } }
@@ -21,7 +21,7 @@
         <span></span><span></span><span></span>
       </button>
       <nav class="main-nav" id="mainNav" aria-label="เมนูหลัก">
-        <a href="#scan">สแกนพืช</a>
+        <a href="#scan">สแกนขวด</a>
         <a href="#live">Realtime</a>
         <a href="#how">วิธีใช้งาน</a>
         <a href="#tips">เคล็ดลับ</a>
@@ -35,17 +35,17 @@
     <section class="hero">
       <div class="container hero-inner">
         <div class="hero-text">
-          <p class="eyebrow">VitroVision &bull; Plant Readiness Check</p>
-          <h1>สแกนพืช รู้ทันที<br /><span class="accent">พร้อมลงปลูกหรือยัง</span></h1>
-          <p class="lede">ถ่ายรูปหรืออัปโหลดภาพต้นกล้า ระบบจะประเมินสุขภาพใบ ลำต้น ความชื้น และให้คะแนนความพร้อมก่อนย้ายลงแปลงจริง</p>
+          <p class="eyebrow">VitroVision &bull; In-vitro Readiness Check</p>
+          <h1>สแกนขวดเพาะเลี้ยง รู้ทันที<br /><span class="accent">พร้อมย้ายออกจากขวดหรือยัง</span></h1>
+          <p class="lede">ถ่ายภาพต้นกล้าในขวดทดลอง ระบบ AI ตรวจคุณภาพภาพ (แสงสะท้อน/ฝ้า) วัดความสูงต้นเทียบภาพ แล้วสรุปผล 3 ระดับ พร้อมรายงานรายขวด — ประมวลผลในเครื่องคุณ ไม่ส่งภาพขึ้นเซิร์ฟเวอร์</p>
           <div class="hero-actions">
             <a href="#scan" class="btn btn-primary">เริ่มสแกนเลย</a>
             <a href="#how" class="btn btn-ghost">ดูวิธีใช้งาน</a>
           </div>
           <ul class="hero-stats">
-            <li><strong>~5 วิ</strong><span>รู้ผลวิเคราะห์</span></li>
-            <li><strong>4 มิติ</strong><span>ใบ&bull;ลำต้น&bull;ชื้น&bull;ราก</span></li>
-            <li><strong>ฟรี</strong><span>ใช้งานไม่จำกัด</span></li>
+            <li><strong>≥20%</strong><span>เกณฑ์ความสูงต้น</span></li>
+            <li><strong>3 ระดับ</strong><span>พร้อม &bull; รอ &bull; ตรวจเอง</span></li>
+            <li><strong>ฟรี</strong><span>รันในเบราว์เซอร์ 100%</span></li>
           </ul>
         </div>
         <div class="hero-visual" aria-hidden="true">
@@ -66,18 +66,18 @@
     <!-- SCAN -->
     <section id="scan" class="section">
       <div class="container">
-        <h2>สแกนพืชของคุณ</h2>
-        <p class="section-sub">รองรับทั้งถ่ายภาพจากกล้องมือถือและอัปโหลดภาพจากเครื่อง</p>
+        <h2>สแกนขวดเพาะเลี้ยงของคุณ</h2>
+        <p class="section-sub">ระบบตรวจคุณภาพภาพก่อน (แสงสะท้อน/ฝ้า) แล้ววัดความสูงต้นเทียบภาพด้วย AI — แนะนำสแกนขวดทดสอบ 1 ขวดก่อนเริ่มจับเวลาจริง (โหลดโมเดลครั้งแรก ~15 MB)</p>
 
         <div class="scan-layout">
           <div class="card scan-card">
-            <h3 class="card-title">1. อัปโหลดภาพต้นกล้า</h3>
+            <h3 class="card-title">1. อัปโหลด / ถ่ายภาพขวดเพาะเลี้ยง</h3>
             <label class="upload-zone" for="fileInput" id="uploadZone">
-              <img id="previewImg" class="preview hidden" alt="ภาพตัวอย่างพืชที่อัปโหลด" />
+              <img id="previewImg" class="preview hidden" alt="ภาพตัวอย่างขวดเพาะเลี้ยงที่อัปโหลด" />
               <div class="upload-hint" id="uploadHint">
                 <svg viewBox="0 0 24 24" width="40" height="40" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
-                <strong>แตะเพื่อถ่ายภาพ / อัปโหลด</strong>
-                <span>ไฟล์ JPG หรือ PNG &bull; บนมือถือจะเปิดกล้องให้เลย</span>
+                <strong>แตะเพื่อถ่ายภาพ / อัปโหลดภาพขวด</strong>
+                <span>ไฟล์ JPG หรือ PNG &bull; ถ่ายแนวดิ่งให้เห็นต้นในขวดชัด ๆ</span>
               </div>
               <span class="scan-line" aria-hidden="true"></span>
             </label>
@@ -85,8 +85,40 @@
 
             <div class="field">
               <label for="plantName">ชื่อพืช <small>(ไม่บังคับ)</small></label>
-              <input type="text" id="plantName" placeholder="เช่น กะเพรา, โหระพา, มะเขือเทศ" maxlength="40" />
+              <input type="text" id="plantName" placeholder="เช่น พริกขี้หนู" maxlength="40" />
             </div>
+
+            <details class="lab-panel">
+              <summary>🧪 โหมดวิจัย (YSC) — จับเวลา + เก็บข้อมูล 100 ขวด</summary>
+              <label class="chk"><input type="checkbox" id="timeModeChk" /> โหมดจับเวลา (แสดงเวลา AI + เทียบกับการตรวจด้วยตา)</label>
+              <label class="chk"><input type="checkbox" id="dataModeChk" /> โหมดเก็บข้อมูล (บันทึกรายขวด + ดาวน์โหลด CSV)</label>
+              <div class="lab-fields hidden" id="labFields">
+                <div class="field">
+                  <label for="bottleId">รหัสขวด</label>
+                  <input type="text" id="bottleId" maxlength="20" placeholder="เช่น B001" autocomplete="off" />
+                </div>
+                <div class="field">
+                  <label for="expertLabel">ผลตรวจด้วยตา (ผู้เชี่ยวชาญ — ถ้ามี)</label>
+                  <select id="expertLabel">
+                    <option value="">— ยังไม่ระบุ —</option>
+                    <option value="พร้อม">พร้อม</option>
+                    <option value="ไม่พร้อม">ไม่พร้อม</option>
+                    <option value="รอตรวจซ้ำ">รอตรวจซ้ำ</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label for="manualMin">เวลาตรวจด้วยตาต่อขวด (นาที)</label>
+                  <input type="number" id="manualMin" min="0.5" max="60" step="0.5" placeholder="เช่น 3" />
+                </div>
+                <p class="lab-note">ใช้กับแผนทดลอง 100 ขวด (ข้อเสนอ YSC): เก็บผลรายขวดเพื่อคำนวณ kappa / เวลา — ข้อมูลเก็บในเครื่องคุณเท่านั้น (localStorage) สำหรับการทดสอบ blind ให้ผู้เชี่ยวชาญบันทึกผลแยกก่อน แล้วค่อยกรอกช่องด้านบน</p>
+                <p class="session-stats" id="sessionStats"></p>
+                <ul class="session-list" id="sessionList"></ul>
+                <div class="row-btns">
+                  <button id="exportCsvBtn" class="btn btn-ghost btn-small" type="button">ดาวน์โหลด CSV</button>
+                  <button id="clearSessionBtn" class="btn btn-ghost btn-small" type="button">ล้างข้อมูลเซสชัน</button>
+                </div>
+              </div>
+            </details>
 
             <h3 class="card-title">2. เริ่มวิเคราะห์</h3>
             <div class="row-btns">
@@ -96,10 +128,10 @@
 
             <div class="progress hidden" id="progressBox">
               <ol class="steps" id="stepsList">
-                <li>ตรวจจับต้นพืชในภาพ</li>
-                <li>ประเมินสีและความสมบูรณ์ของใบ</li>
-                <li>ประเมินลำต้น ความชื้น และราก</li>
-                <li>คำนวณคะแนนความพร้อม</li>
+                <li>ตรวจคุณภาพภาพ (แสงสะท้อน / ฝ้า / พบต้นพืช)</li>
+                <li>แยกส่วนต้นพืชด้วยโมเดล AI (U-Net)</li>
+                <li>วัดความสูงต้นเทียบภาพ (height_proxy)</li>
+                <li>สรุปผล 3 ระดับ + สร้างรายงานขวด</li>
               </ol>
               <div class="bar" role="progressbar" aria-label="ความคืบหน้าการวิเคราะห์" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="progressBar"><span id="progressFill"></span></div>
             </div>
@@ -109,13 +141,18 @@
             <div class="result-empty" id="resultEmpty">
               <svg viewBox="0 0 24 24" width="44" height="44" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
               <p><strong>ผลวิเคราะห์จะแสดงที่นี่</strong></p>
-              <span>อัปโหลดภาพแล้วกด &ldquo;วิเคราะห์ความพร้อม&rdquo;</span>
+              <span>อัปโหลดภาพขวดแล้วกด &ldquo;วิเคราะห์ความพร้อม&rdquo;</span>
             </div>
 
             <div class="result hidden" id="resultBox">
-              <p class="status-badge" id="statusBadge">พร้อมลงปลูก</p>
-              <h3 class="card-title" id="resultTitle">ผลวิเคราะห์ต้นกล้า</h3>
+              <p class="status-badge" id="statusBadge">พร้อมย้ายออกจากขวด</p>
+              <h3 class="card-title" id="resultTitle">ผลวิเคราะห์ขวดเพาะเลี้ยง</h3>
               <p class="result-desc" id="resultDesc"></p>
+
+              <div class="gate-box hidden" id="gateBox">
+                <strong id="gateReason">ต้องตรวจเอง</strong>
+                <ul id="gateTips"></ul>
+              </div>
 
               <div class="seg" role="group" aria-label="สลับมุมมองผลลัพธ์">
                 <button id="view2dBtn" type="button" aria-pressed="true">มุมมอง 2D</button>
@@ -123,19 +160,22 @@
               </div>
 
               <div id="view2d">
-                <div class="score-wrap">
+                <div class="score-wrap" id="scoreWrap">
                   <svg class="ring" viewBox="0 0 140 140" role="img" aria-label="คะแนนความพร้อม">
                     <circle class="ring-bg" cx="70" cy="70" r="58" />
                     <circle class="ring-fg" id="ringFg" cx="70" cy="70" r="58" />
                   </svg>
                   <div class="score-text"><strong id="scoreNum">0</strong><span>/ 100</span></div>
                 </div>
+                <p class="score-caption" id="scoreCaption">ความพร้อมเทียบเกณฑ์ความสูง (สูง ≥ 20% ของภาพ)</p>
+                <p class="conf-line hidden" id="confLine"></p>
               </div>
               <div id="view3d" class="hidden">
                 <div id="plant3d" role="img" aria-label="โมเดลต้นพืช 3 มิติตามผลวิเคราะห์"></div>
                 <p class="view-note" id="threeDNote">กำลังโหลดโมเดล 3D&hellip;</p>
               </div>
 
+              <h4 class="rec-title">องค์ประกอบรอง (จากภาพ)</h4>
               <ul class="metrics" id="metricsList"></ul>
 
               <h4 class="rec-title" id="measuredTitle">ค่าที่วัดได้จากภาพจริง</h4>
@@ -144,18 +184,27 @@
                 <img id="aiShotImg" alt="พื้นที่ที่ AI ตรวจจับว่าเป็นต้นพืช (สีเขียว)" />
                 <span class="ai-shot-note">สีเขียว = ส่วนที่โมเดล AI แยกได้ว่าเป็นต้นพืช (ไม่ใช่การวาดทับแบบสุ่ม)</span>
               </div>
-              <p class="method-note" id="methodNote">วิธีวิเคราะห์: ใช้โมเดล AI (U-Net + MobileNetV3-Small) แยกส่วนต้นพืชออกจากภาพ แล้ววัดขนาดต้น สีใบ และความมืดของดินจากพิกเซลจริง</p>
+              <p class="method-note" id="methodNote">วิธีวิเคราะห์: โมเดล AI U-Net แยกส่วนต้นพืช → วัดความสูงต้นเทียบภาพ (height_proxy) + ตรวจแสงสะท้อน/ฝ้าจากพิกเซลจริง</p>
+
+              <div class="report-card" id="reportCard">
+                <div class="report-head">
+                  <h4>รายงานรายขวด</h4>
+                  <button id="copyReportBtn" class="btn btn-ghost btn-small" type="button">คัดลอก</button>
+                </div>
+                <pre class="report-text" id="reportText"></pre>
+              </div>
+              <p class="timing-line hidden" id="timingLine"></p>
 
               <h4 class="rec-title">คำแนะนำ</h4>
               <ul class="recs" id="recsList"></ul>
 
-              <button id="newScanBtn" class="btn btn-ghost btn-block" type="button">สแกนต้นใหม่</button>
+              <button id="newScanBtn" class="btn btn-ghost btn-block" type="button">สแกนขวดใหม่</button>
             </div>
           </div>
         </div>
         <div class="card samples-card">
-          <h3 class="card-title">ภาพตัวอย่างเมล็ดพริก — แตะเพื่อสแกนเลย</h3>
-          <p class="section-sub samples-sub">ภาพตัวอย่าง 5 ระยะการเติบโต (ที่มา: Wikimedia Commons)</p>
+          <h3 class="card-title">ภาพตัวอย่างพริก 5 ระยะ — แตะเพื่อทดลองสแกน</h3>
+          <p class="section-sub samples-sub">ใช้ทดลองระบบ: ผลจะต่างกันตามขนาดต้นในภาพ เหมาะสำหรับฝึกอ่านค่า height_proxy (ที่มา: Wikimedia Commons)</p>
           <div class="samples-grid" id="sampleGrid"></div>
           <p class="samples-credit" id="samplesCredit"></p>
         </div>
@@ -166,7 +215,7 @@
     <section id="live" class="section">
       <div class="container">
         <h2>สแกน Realtime</h2>
-        <p class="section-sub">เปิดกล้อง ดูค่าวัดสด แล้วกดจับภาพเพื่อวิเคราะห์เต็มพร้อมภาพ 3D</p>
+        <p class="section-sub">เปิดกล้องส่องขวด ดูค่าวัดสด แล้วกดจับภาพเพื่อวิเคราะห์เต็มพร้อมรายงาน</p>
         <div class="live-layout">
           <div class="card live-card">
             <div class="video-wrap" id="videoWrap">
@@ -204,7 +253,7 @@
                 <div class="metric-track"><span class="metric-fill"></span></div>
               </li>
             </ul>
-            <p class="live-hint">ค่าวัดสดประเมินจากเฟรมกล้องด้วยโมเดล AI จริง (อัปเดตทุก ~2 วินาที) กดจับภาพเพื่อวิเคราะห์เต็ม 4 มิติ + โมเดล 3D</p>
+            <p class="live-hint">ค่าวัดสดประเมินจากเฟรมกล้องด้วยโมเดล AI จริง (อัปเดตทุก ~2 วินาที) กดจับภาพเพื่อวิเคราะห์เต็ม + รายงานรายขวด</p>
           </div>
         </div>
         <canvas id="captureCanvas" class="hidden" aria-hidden="true"></canvas>
@@ -215,22 +264,22 @@
     <section id="how" class="section section-alt">
       <div class="container">
         <h2>วิธีใช้งาน</h2>
-        <p class="section-sub">3 ขั้นตอนง่าย ๆ ใช้ได้ทั้งมือถือและคอมพิวเตอร์</p>
+        <p class="section-sub">3 ขั้นตอนง่าย ๆ สำหรับตรวจขวดเพาะเลี้ยงในห้องแล็บหรือที่บ้าน</p>
         <ol class="steps-grid">
           <li class="card">
             <span class="step-num">1</span>
-            <h3>ถ่าย / อัปโหลดภาพ</h3>
-            <p>ถ่ายต้นกล้าให้เห็นใบและลำต้นชัด ๆ แสงธรรมชาติจะให้ผลดีที่สุด</p>
+            <h3>ถ่าย / อัปโหลดภาพขวด</h3>
+            <p>จัดขวดให้เห็นต้นชัดในเฟรม ถ่ายแนวดิ่งจากด้านหน้า หลบแสงสะท้อน และเช็ดฝ้าให้แห้ง</p>
           </li>
           <li class="card">
             <span class="step-num">2</span>
             <h3>กดวิเคราะห์</h3>
-            <p>ระบบประเมิน 4 มิติ ได้แก่ ใบ ลำต้น ความชื้น และระบบราก</p>
+            <p>AI ตรวจคุณภาพภาพก่อน ถ้าผ่านจึงแยกส่วนต้นพืชด้วย U-Net และวัดความสูงต้นเทียบภาพ (height_proxy)</p>
           </li>
           <li class="card">
             <span class="step-num">3</span>
-            <h3>อ่านผล + ทำตามคำแนะนำ</h3>
-            <p>ได้คะแนนความพร้อม สถานะ และวิธีดูแลก่อนย้ายลงแปลง</p>
+            <h3>อ่านผล 3 ระดับ</h3>
+            <p>พร้อมย้ายออก / รออีกไม่กี่วัน / ตรวจเอง (ภาพไม่ผ่านคุณภาพ) — พร้อมรายงานรายขวดที่คัดลอกได้</p>
           </li>
         </ol>
       </div>
@@ -239,24 +288,24 @@
     <!-- TIPS -->
     <section id="tips" class="section">
       <div class="container">
-        <h2>เคล็ดลับต้นกล้าแข็งแรง</h2>
-        <p class="section-sub">พื้นฐานที่ทำให้คะแนนความพร้อมสูงตั้งแต่แรก</p>
+        <h2>เคล็ดลับถ่ายภาพขวดให้ผ่านเกณฑ์</h2>
+        <p class="section-sub">ลดสาเหตุที่ทำให้ระบบต้องให้ &ldquo;ตรวจเอง&rdquo;</p>
         <div class="tips-grid">
           <article class="card tip">
-            <h3>แสงพอดี ไม่จัดเกิน</h3>
-            <p>ต้นกล้าต้องการแสงรำไร 4–6 ชั่วโมงต่อวัน แดดจัดทั้งวันทำให้ใบไหม้และคะแนนใบตก</p>
+            <h3>หลบแสงสะท้อน</h3>
+            <p>ถ้าฝา/ผิวขวดสะท้อนจ้า ระบบจะลดความเชื่อมั่นและขึ้น &ldquo;ตรวจเอง&rdquo; — ลองถ่ายจากมุมอื่น ใช้ฉากหลังทึบสีเข้ม หรือปิดไฟด้านบนชั่วคราว</p>
           </article>
           <article class="card tip">
-            <h3>รดน้ำพอชุ่ม ไม่แฉะ</h3>
-            <p>รดเช้า–เย็นแค่พอดินชุ่ม น้ำขังทำให้รากเน่า ซึ่งเป็นสาเหตุหลักของต้นกล้าไม่พร้อมปลูก</p>
+            <h3>เช็ดฝ้า / ละอองน้ำก่อนถ่าย</h3>
+            <p>ฝ้าบนกระจกบังมุมมอง AI — เช็ดแล้วรอ 1–2 นาทีให้จางก่อนกดถ่าย ถ้าเป็นฝ้าด้านในขวดให้รอหรือเปลี่ยนขวด</p>
           </article>
           <article class="card tip">
-            <h3>ให้ลมโกรกบ้าง</h3>
-            <p>ลมเบา ๆ ช่วยให้ลำต้นสร้างเนื้อเยื่อแข็งแรง ต้นไม่ยืดยาวอ่อนแอ (ขี้เกียจล้ม)</p>
+            <h3>ให้ต้นเต็มเฟรม</h3>
+            <p>วางขวดแนวตั้ง ถ่ายให้เห็นตั้งแต่ยอดถึงโคนต้น — เพราะ height_proxy คิดเป็นสัดส่วนต่อความสูงของภาพ</p>
           </article>
           <article class="card tip">
-            <h3>อย่ารีบย้ายกระถาง</h3>
-            <p>รอให้รากเดินเต็มก่อนย้าย ถอนดูเบา ๆ ถ้ารากยังน้อยให้อนุบาลต่ออีก 5–7 วัน</p>
+            <h3>ดูสีใบประกอบ</h3>
+            <p>ใบเขียวเข้มสม่ำเสมอ = สัญญาณพร้อมย้ายออก; ใบเหลืองซีดหรือช้ำ = รออีกหน่อยแล้วสแกนซ้ำ</p>
           </article>
         </div>
       </div>
@@ -273,15 +322,15 @@
           <button id="clearHistoryBtn" class="btn btn-ghost btn-small" type="button">ล้างประวัติ</button>
         </div>
         <ul class="history-list" id="historyList"></ul>
-        <p class="history-empty" id="historyEmpty">ยังไม่มีประวัติการสแกน — เริ่มสแกนต้นแรกของคุณเลย</p>
+        <p class="history-empty" id="historyEmpty">ยังไม่มีประวัติการสแกน — เริ่มสแกนขวดแรกของคุณเลย</p>
       </div>
     </section>
   </main>
 
   <footer class="site-footer">
     <div class="container">
-      <p><strong>VitroVision</strong> &mdash; สแกนพืช รู้ทันทีว่าพร้อมลงปลูกหรือยัง</p>
-      <p class="footnote">ผลวิเคราะห์จากโมเดล AI แยกส่วนต้นพืช (U-Net + MobileNetV3-Small, Val Dice 0.98) ร่วมกับการวัดพิกเซลจริง — โมเดลจาก Peeradon4778/vitrovision-unet-small (Hugging Face, สัญญาอนุญาต MIT)</p>
+      <p><strong>VitroVision</strong> &mdash; สแกนขวดเพาะเลี้ยง รู้ทันทีว่าพร้อมย้ายออกจากขวดหรือยัง</p>
+      <p class="footnote">ผลวิเคราะห์: โมเดล U-Net + MobileNetV3-Small (Val Dice 0.98, MIT — Peeradon4778/vitrovision-unet-small) ร่วมกับการตรวจคุณภาพภาพ (แสงสะท้อน/ฝ้า) และการวัดพิกเซลจริงในเบราว์เซอร์ — เกณฑ์ความพร้อมย้ายออก: ความสูงต้น ≥ 20% ของภาพ (ตรงกับ README ของโมเดล)</p>
     </div>
   </footer>
 

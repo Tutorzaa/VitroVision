@@ -44,10 +44,29 @@ async function connect() {
   await send("Runtime.enable", {});
   await send("Page.enable", {});
 
+  // fresh reload so the page always runs the latest code
+  await send("Page.reload", { ignoreCache: true });
+  await sleep(2500);
+
   // wait for sample gallery
   const ready = await evalJs(`new Promise(res => { const t = setInterval(() => { if (document.querySelectorAll('#sampleGrid .sample-card').length >= 5) { clearInterval(t); res(true); } }, 200); setTimeout(() => { clearInterval(t); res(false); }, 20000); })`);
   console.log("sample gallery ready:", ready);
   if (!ready) { console.log("LOGS:", logs.slice(-10)); process.exit(1); }
+
+  const extract = `({
+    title: document.getElementById('resultTitle').textContent,
+    score: document.getElementById('scoreNum').textContent,
+    scoreHidden: document.getElementById('scoreWrap').classList.contains('hidden'),
+    status: document.getElementById('statusBadge').textContent,
+    gate: document.getElementById('gateBox').classList.contains('hidden') ? '' : document.getElementById('gateReason').textContent,
+    conf: document.getElementById('confLine').classList.contains('hidden') ? '' : document.getElementById('confLine').textContent,
+    reportHead: (document.getElementById('reportText').textContent || '').split('\\n').slice(0, 2).join(' | '),
+    measured: Array.from(document.querySelectorAll('#measuredList li')).map(li => li.textContent).slice(0, 8),
+    recs: Array.from(document.querySelectorAll('#recsList li')).map(li => li.textContent).slice(0, 2),
+    aiShotHidden: document.getElementById('aiShot').classList.contains('hidden'),
+    methodNote: document.getElementById('methodNote').textContent.slice(0, 60),
+    desc: document.getElementById('resultDesc').textContent.slice(0, 80)
+  })`;
 
   const runSample = (idx) => `new Promise(res => {
     document.querySelectorAll('#sampleGrid .sample-card')[${idx}].click();
@@ -55,18 +74,7 @@ async function connect() {
     const t = setInterval(() => {
       if (!box.classList.contains('hidden') && document.getElementById('metricsList').children.length > 0) {
         clearInterval(t);
-        setTimeout(() => {
-          res({
-            title: document.getElementById('resultTitle').textContent,
-            score: document.getElementById('scoreNum').textContent,
-            status: document.getElementById('statusBadge').textContent,
-            measured: Array.from(document.querySelectorAll('#measuredList li')).map(li => li.textContent).slice(0, 8),
-            recs: Array.from(document.querySelectorAll('#recsList li')).map(li => li.textContent).slice(0, 2),
-            aiShotHidden: document.getElementById('aiShot').classList.contains('hidden'),
-            methodNote: document.getElementById('methodNote').textContent.slice(0, 60),
-            desc: document.getElementById('resultDesc').textContent.slice(0, 80)
-          });
-        }, 1600);
+        setTimeout(() => { res(${extract}); }, 1600);
       }
     }, 250);
     setTimeout(() => { clearInterval(t); res({ timeout: true }); }, 90000);
@@ -93,15 +101,7 @@ async function connect() {
       const t = setInterval(() => {
         if (!box.classList.contains('hidden') && document.getElementById('metricsList').children.length > 0) {
           clearInterval(t);
-          setTimeout(() => {
-            res({
-              score: document.getElementById('scoreNum').textContent,
-              status: document.getElementById('statusBadge').textContent,
-              desc: document.getElementById('resultDesc').textContent.slice(0, 90),
-              aiHidden: document.getElementById('aiShot').classList.contains('hidden'),
-              measured: Array.from(document.querySelectorAll('#measuredList li')).map(li => li.textContent).slice(0, 4)
-            });
-          }, 1600);
+          setTimeout(() => { res(${extract}); }, 1600);
         }
       }, 250);
       setTimeout(() => { clearInterval(t); res({ timeout: true }); }, 60000);
@@ -109,6 +109,21 @@ async function connect() {
   })`;
   const g = await evalJs(gateTest);
   console.log("GATE(test-plain):", JSON.stringify(g, null, 1));
+
+  // ---- lab mode quick check: toggles + timing line ----
+  const lab = await evalJs(`(function () {
+    var out = {};
+    var d = document.getElementById('dataModeChk');
+    var t = document.getElementById('timeModeChk');
+    out.hasDataChk = !!d; out.hasTimeChk = !!t;
+    if (d) { d.checked = true; d.dispatchEvent(new Event('change')); }
+    if (t) { t.checked = true; t.dispatchEvent(new Event('change')); }
+    out.labFieldsVisible = !document.getElementById('labFields').classList.contains('hidden');
+    out.timingVisible = !document.getElementById('timingLine').classList.contains('hidden');
+    out.sessionStats = document.getElementById('sessionStats').textContent;
+    return out;
+  })()`);
+  console.log("LAB MODE:", JSON.stringify(lab, null, 1));
 
   console.log("--- console logs (last 12) ---");
   console.log(logs.slice(-12).join("\n"));
